@@ -1,0 +1,1291 @@
+<meta charset="utf-8">
+<title>Launch Window</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a site × day score board (the summary) above a detail bench for one site-day: model comparison, hourly strip, sounding. */
+:root {
+  --paper: #EEF2F0;     /* topo-map paper, faint green-grey */
+  --panel: #FBFCFB;
+  --ink: #15201E;
+  --muted: #5A6966;
+  --line: #D3DCD8;
+  --accent: #D9531E;    /* windsock orange */
+  --accent-ink: #FFFFFF;
+  --dew: #2F6FA3;
+  --sector: #3E9A5B;
+  --s0: #F2C6C0; --s1: #F5D8B6; --s2: #F1E7AC; --s3: #CDE6BC; --s4: #9ED3A3;
+  --dot0: #B42318; --dot1: #C4620F; --dot2: #A88A0B; --dot3: #4C8F36; --dot4: #1F7A3A;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #0F1715; --panel: #16201E; --ink: #E3EBE8; --muted: #93A4A0; --line: #2A3835;
+    --accent: #F0763F; --accent-ink: #1A0D06; --dew: #6FA8DC; --sector: #5CBF7A;
+    --s0: #5B211C; --s1: #5A3B17; --s2: #4D4619; --s3: #27472B; --s4: #1E5A32;
+    --dot0: #F07A6E; --dot1: #F0A04F; --dot2: #E3C84A; --dot3: #8FCB6E; --dot4: #4FC77A;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #0F1715; --panel: #16201E; --ink: #E3EBE8; --muted: #93A4A0; --line: #2A3835;
+  --accent: #F0763F; --accent-ink: #1A0D06; --dew: #6FA8DC; --sector: #5CBF7A;
+  --s0: #5B211C; --s1: #5A3B17; --s2: #4D4619; --s3: #27472B; --s4: #1E5A32;
+  --dot0: #F07A6E; --dot1: #F0A04F; --dot2: #E3C84A; --dot3: #8FCB6E; --dot4: #4FC77A;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--paper); color: var(--ink); font: 14px/1.5 var(--font-body); margin: 0; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 20px 48px; display: grid; gap: 20px; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 600; letter-spacing: .01em; text-wrap: balance; margin: 0; line-height: 1.1; }
+h1 { font-size: 2.1rem; font-weight: 700; }
+h2 { font-size: 1.45rem; }
+h3 { font-size: 1.1rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+a { color: inherit; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.label { font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.mono { font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+
+/* header */
+header { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 24px; }
+.brand p { margin: 4px 0 0; color: var(--muted); max-width: 60ch; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--panel); }
+.seg button { border: 0; background: none; padding: 6px 12px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+.btn { border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); padding: 6px 12px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.status { font-size: .8rem; color: var(--muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); font-size: .75rem; background: var(--panel); }
+.pill.live { border-color: var(--dot4); color: var(--dot4); }
+.pill.snap { border-color: var(--dot2); color: var(--dot2); }
+
+/* board */
+.board-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+table.board { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 760px; }
+.board th, .board td { padding: 0; border-bottom: 1px solid var(--line); }
+.board thead th { font-weight: 500; text-align: center; padding: 8px 4px; font-size: .8rem; }
+.board thead th .dow { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; display: block; }
+.board th.site { position: sticky; left: 0; background: var(--panel); text-align: left; padding: 8px 12px; min-width: 190px; z-index: 1; border-right: 1px solid var(--line); }
+.board tbody tr:last-child th, .board tbody tr:last-child td { border-bottom: 0; }
+.site-name { font-family: var(--font-display); font-size: 1.15rem; font-weight: 600; display: flex; gap: 6px; align-items: center; justify-content: space-between; }
+.site-meta { font-size: .75rem; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+.x { border: 0; background: none; color: var(--muted); padding: 0 4px; font-size: 1rem; line-height: 1; }
+.x:hover { color: var(--dot0); }
+.cell { display: grid; width: 100%; min-height: 64px; border: 0; padding: 6px 4px; place-content: center; text-align: center; gap: 1px; background: transparent; border-left: 1px solid var(--line); }
+.cell .n { font-family: var(--font-display); font-size: 1.6rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.sock { display: inline-flex; align-items: center; justify-content: center; gap: 2px; font: 600 .78rem var(--font-data); font-variant-numeric: tabular-nums; }
+.sock svg { width: 28px; height: 28px; overflow: visible; }
+.cell .sock { margin: -2px 0; }
+.sock .sk-o { fill: var(--accent); stroke: var(--ink); stroke-width: .35; }
+.sock .sk-w { fill: #FFFFFF; stroke: var(--ink); stroke-width: .35; }
+.sock .sk-off { fill: none; stroke: var(--ink); stroke-width: .35; stroke-dasharray: .8 .8; opacity: .5; }
+.sock .sk-mast { fill: var(--ink); }
+.cell .w { font-family: var(--font-data); font-size: .7rem; color: var(--ink); opacity: .75; }
+.cell[aria-pressed="true"] { outline: 3px solid var(--ink); outline-offset: -3px; }
+.cell.nodata { color: var(--muted); }
+.b0 { background: var(--s0); } .b1 { background: var(--s1); } .b2 { background: var(--s2); } .b3 { background: var(--s3); } .b4 { background: var(--s4); }
+.agree { display: inline-flex; gap: 2px; justify-content: center; }
+.agree i { width: 5px; height: 5px; border-radius: 50%; background: var(--ink); opacity: .25; }
+.agree i.on { opacity: .8; }
+.gust { font-family: var(--font-data); font-size: .7rem; font-variant-numeric: tabular-nums; }
+.gust.near { color: var(--dot1); font-weight: 600; }
+.gust.over { color: var(--dot0); font-weight: 600; }
+.spots { display: grid; gap: 8px; }
+.spot-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.spot { display: flex; gap: 10px; align-items: center; text-align: left; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); padding: 8px 10px; }
+.spot:hover { border-color: var(--muted); }
+.spot .chip { font-size: 1.3rem; padding: 2px 6px; }
+.spot-txt { display: grid; min-width: 0; }
+.spot-txt b { font-family: var(--font-display); font-size: 1.1rem; font-weight: 600; overflow-wrap: anywhere; }
+.spot-txt small { color: var(--muted); font-size: .75rem; }
+.tip { position: fixed; z-index: 50; max-width: min(320px, calc(100vw - 24px)); background: var(--ink); color: var(--paper); padding: 8px 11px; border-radius: 6px; font-size: .78rem; line-height: 1.45; pointer-events: none; white-space: pre-line; box-shadow: 0 6px 20px rgb(0 0 0 / .25); }
+.tip b { display: block; font-family: var(--font-display); font-size: 1rem; font-weight: 600; margin-bottom: 2px; }
+[data-tip] { cursor: help; }
+button[data-tip], a[data-tip], input[data-tip], select[data-tip], tr[data-hour] [data-tip] { cursor: pointer; }
+input[data-tip] { cursor: text; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: .78rem; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend b { width: 14px; height: 14px; border-radius: 3px; display: inline-block; border: 1px solid var(--line); }
+
+/* add site */
+.add { display: flex; flex-wrap: wrap; gap: 10px; align-items: start; }
+.search { position: relative; flex: 1 1 280px; min-width: 0; max-width: 460px; }
+.search input { width: 100%; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); }
+.results { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); max-height: 320px; overflow-y: auto; z-index: 5; box-shadow: 0 8px 24px rgb(0 0 0 / .12); }
+.results button { display: flex; flex-wrap: wrap; width: 100%; justify-content: space-between; gap: 2px 10px; border: 0; background: none; padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+.results button:hover, .results button:focus-visible { background: var(--paper); }
+.results small { color: var(--muted); font-family: var(--font-data); font-size: .72rem; white-space: nowrap; }
+.note { font-size: .8rem; color: var(--muted); max-width: 70ch; }
+.add .note { flex-basis: 100%; margin: 0; }
+.nearby { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; display: grid; gap: 10px; }
+.nearby-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; justify-content: space-between; }
+.nearby-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px 18px; }
+.near { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.near b { font-family: var(--font-display); font-size: 1.05rem; font-weight: 600; overflow-wrap: anywhere; }
+.near small { grid-column: 1; color: var(--muted); font-family: var(--font-data); font-size: .72rem; }
+.near .btn { grid-row: 1 / 3; grid-column: 2; padding: 3px 10px; font-size: .8rem; }
+.near .btn:disabled { opacity: .5; cursor: default; }
+
+/* detail */
+.detail { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 18px; display: grid; gap: 18px; }
+.detail-head { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; justify-content: space-between; }
+.detail-head .facts { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: .85rem; color: var(--muted); }
+.detail-head .facts a { color: var(--accent); }
+.verdict { display: flex; gap: 14px; align-items: center; }
+.big { font-family: var(--font-display); font-size: 3rem; font-weight: 700; line-height: .9; padding: 8px 14px; border-radius: var(--r); font-variant-numeric: tabular-nums; }
+.models { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.model { border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 4px; }
+.model .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.model .sc { font-family: var(--font-display); font-weight: 700; font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+.model .why { font-size: .78rem; color: var(--muted); }
+.bench { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 860px) { .bench { grid-template-columns: minmax(0, 1fr); } }
+.hours-scroll { overflow-x: auto; }
+table.hours { border-collapse: collapse; width: 100%; font-size: .8rem; }
+.hours th, .hours td { padding: 4px 6px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.hours thead th { font-weight: 500; color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; }
+.hours tbody tr { cursor: pointer; }
+.hours tbody tr:hover { background: var(--paper); }
+.hours tbody tr.sel { background: var(--paper); box-shadow: inset 3px 0 0 var(--accent); }
+.hours tr.outside td, .hours tr.outside th { opacity: .55; }
+.hc { display: flex; gap: 6px; align-items: center; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+.arrow { display: inline-block; width: 1em; text-align: center; }
+.chip { font-family: var(--font-display); font-weight: 700; font-size: .95rem; min-width: 2.1em; text-align: center; border-radius: 4px; padding: 0 4px; }
+.rain { color: var(--dew); }
+.snd-wrap { display: grid; gap: 8px; }
+.snd-tabs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.snd-tabs .seg button { padding: 3px 10px; font-size: .8rem; }
+svg.snd { width: 100%; height: auto; display: block; border: 1px solid var(--line); border-radius: var(--r); background: var(--paper); }
+svg.snd text { font-family: var(--font-data); font-size: 10px; fill: var(--muted); }
+svg.snd .grid { stroke: var(--line); stroke-width: 1; fill: none; }
+svg.snd .t { stroke: var(--ink); stroke-width: 2; fill: none; }
+svg.snd .td { stroke: var(--dew); stroke-width: 2; fill: none; stroke-dasharray: 5 3; }
+svg.snd .dry { stroke: var(--accent); stroke-width: 1.5; fill: none; stroke-dasharray: 2 3; }
+svg.snd .therm { fill: var(--accent); opacity: .12; }
+svg.snd .launch { stroke: var(--sector); stroke-width: 1.5; fill: none; }
+svg.snd .cb { stroke: var(--dew); stroke-width: 1; fill: none; stroke-dasharray: 6 3; }
+svg.snd .wind { fill: var(--ink); font-size: 13px; }
+svg.snd .lbl { fill: var(--ink); }
+.factors { display: grid; gap: 6px; }
+.factor { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) 5.2em; gap: 2px 10px; align-items: center; font-size: .8rem; }
+.factor .fl { line-height: 1.2; }
+.factor .track { position: relative; height: 10px; border-radius: 3px; background: var(--line); margin-bottom: 12px; }
+.factor .track i { display: block; height: 100%; border-radius: 3px; }
+.factor .lim { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--dot0); }
+.factor .limtxt { position: absolute; top: 12px; transform: translateX(-50%); font: 500 9px/1 var(--font-data); font-style: normal; color: var(--dot0); white-space: nowrap; }
+.factor .val { text-align: right; margin-bottom: 12px; }
+.factor .val small { color: var(--muted); font-size: .68rem; }
+.factor .val.bad { color: var(--dot0); font-weight: 600; }
+.factor .d { grid-column: 1 / 4; color: var(--muted); font-size: .76rem; margin: -4px 0 6px; }
+.rose { width: 92px; height: 92px; flex: none; }
+.rose .ring { fill: none; stroke: var(--line); }
+.rose .sec { fill: var(--sector); opacity: .55; }
+.rose .ar { stroke: var(--ink); stroke-width: 2.5; fill: none; }
+.rose .arh { fill: var(--ink); }
+.rose text { font-family: var(--font-data); font-size: 9px; fill: var(--muted); }
+
+/* settings */
+dialog { border: 1px solid var(--line); border-radius: var(--r); background: var(--panel); color: var(--ink); padding: 20px; width: min(560px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(0 0 0 / .35); }
+dialog form { display: grid; gap: 14px; }
+.field { display: grid; gap: 4px; }
+.field input[type=text], .field input[type=password] { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--paper); width: 100%; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.checks label { display: inline-flex; gap: 6px; align-items: center; }
+.err { color: var(--dot0); font-size: .8rem; }
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px 20px; border-left: 3px solid var(--dot1); padding-left: 12px; }
+.notes p { margin: 2px 0 0; white-space: pre-line; font-size: .85rem; max-width: 70ch; overflow-wrap: anywhere; }
+footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-width: 80ch; }
+@media (prefers-reduced-motion: no-preference) { .cell { transition: filter .12s; } .cell:hover { filter: brightness(.96); } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Launch Window</h1>
+      <p>Paragliding site scores from ECMWF, ICON and GFS forecasts. Each score combines wind on the launch, gusts, wind aloft, rain, cloud base, thermals and storm risk.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Pilot profile" id="profile"></div>
+      <button class="btn" id="open-settings" type="button" data-tip-title="Sources & keys" data-tip="Choose which forecast models count toward the scores, and add Windy or Meteoblue API keys.">Sources &amp; keys</button>
+      <button class="btn" id="refresh" type="button" data-tip-title="Refresh" data-tip="Download fresh forecasts for every site. The models publish new runs every 1 to 6 hours.">Refresh</button>
+    </div>
+  </header>
+
+  <div class="status" id="status"></div>
+
+  <section class="spots" id="spots" aria-label="Best spots"></section>
+
+  <section aria-label="Score board" style="display:grid;gap:10px">
+    <div class="board-scroll"><table class="board" id="board"></table></div>
+    <div class="legend" id="legend"></div>
+  </section>
+
+  <section class="add" id="add-section" aria-label="Add a site">
+    <div class="search">
+      <input id="site-search" type="text" placeholder="Add a launch: search 14,000+ sites by name" autocomplete="off" aria-label="Search launch sites" data-tip-title="Search by name" data-tip="Type part of a launch name. Results come from the Paragliding Mapa database (paragliding-mapa.cz, DHV, Paragliding Earth and XContest), with the most-flown launches first.">
+      <div class="results" id="results" hidden></div>
+    </div>
+    <div class="search">
+      <input id="place-search" type="text" placeholder="Launches near a town, region or lat, lon" autocomplete="off" aria-label="Search launches near a location" data-tip-title="Search by location" data-tip="Type a town or region, or coordinates such as 42.69, 24.75. Pick a place to list the launches around it.">
+      <div class="results" id="places" hidden></div>
+    </div>
+    <select id="radius" class="btn" aria-label="Search radius" data-tip-title="Search radius" data-tip="How far from the chosen place to look for launches, measured in a straight line.">
+      <option value="25">within 25 km</option><option value="50" selected>within 50 km</option><option value="100">within 100 km</option><option value="200">within 200 km</option>
+    </select>
+    <button class="btn" id="copy-sites" type="button" data-tip-title="Copy list as favorites.json" data-tip="Copies your current sites in the format snapshot.py reads. Paste them into favorites.json to build the published page from them.">Copy list as favorites.json</button>
+    <p class="note" id="add-note"></p>
+  </section>
+
+  <section class="nearby" id="nearby" aria-live="polite" hidden></section>
+
+  <section class="detail" id="detail" aria-live="polite"></section>
+
+  <footer>
+    <div>Launch sites come from Paragliding Mapa (paragliding-mapa.cz, DHV, Paragliding Earth and XContest), the same source as the Windy plugin <a href="https://github.com/vrana/windy-plugin-pg-mapa" target="_blank" rel="noopener">pg-mapa</a>. Forecasts come from Open-Meteo, plus Windy and Meteoblue when you add API keys.</div>
+    <div>The score only supports your own judgment. It can't see rotors, local convergence or what the windsock is doing. Always check the site rules and the conditions on the hill yourself.</div>
+  </footer>
+</div>
+
+<dialog id="settings">
+  <form method="dialog" id="settings-form">
+    <h2>Sources &amp; keys</h2>
+    <div class="field">
+      <span class="label">Open-Meteo models (free, no key)</span>
+      <div class="checks" id="model-checks"></div>
+    </div>
+    <div class="field">
+      <label class="label" for="windy-key">Windy Point Forecast API key</label>
+      <input id="windy-key" type="password" autocomplete="off" placeholder="Adds Windy GFS and ICON-EU">
+      <span class="note">Get one at api.windy.com/keys. Trial keys return deliberately shuffled data, so use them for testing only.</span>
+    </div>
+    <div class="field">
+      <label class="label" for="mb-key">Meteoblue API key</label>
+      <input id="mb-key" type="password" autocomplete="off" placeholder="Adds the Meteoblue multimodel forecast">
+      <span class="note">Get one at meteoblue.com/en/weather-api. Keys stay in this browser only.</span>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:end">
+      <button class="btn" value="cancel" type="submit">Cancel</button>
+      <button class="btn primary" value="save" id="save-settings" type="submit">Save and reload forecasts</button>
+    </div>
+  </form>
+</dialog>
+
+<script id="snapshot" type="application/json">null</script>
+<script>
+'use strict';
+
+// ---------- constants ----------
+const DEFAULT_SITES = [
+  {key: '42.687256 24.749956', name: 'Sopot', lat: 42.687256, lon: 24.749956, alt: 1445, sup: 876, wind: [[213.75, 236.25]], url: 'https://www.paraglidingearth.com/?site=6577'},
+  {key: '42.600808 23.284264', name: 'Goli', lat: 42.600808, lon: 23.284264, alt: 1801, sup: 1105, wind: [[33.75, 56.25]], url: 'https://www.paraglidingearth.com/?site=14556'},
+  {key: '43.258331 26.926844', name: 'Shumen', lat: 43.258331, lon: 26.926844, alt: 432, sup: 259, wind: [[78.75, 146.25], [123.75, 191.25]], url: 'https://www.paraglidingearth.com/?site=9846'},
+  {key: '41.909567 24.931344', name: 'Dobrostan', lat: 41.909567, lon: 24.931344, alt: 1249, sup: 747, wind: [[33.75, 146.25]], url: 'https://www.paraglidingearth.com/?site=12653'},
+  {key: '42.741461 24.612644', name: 'Beklemeto', lat: 42.741461, lon: 24.612644, alt: 1198, sup: 611, wind: [[168.75, 191.25]], url: 'https://www.paraglidingearth.com/?site=11704'},
+  {key: '42.766169 24.112586', name: 'Svishti Plaz', lat: 42.766169, lon: 24.112586, alt: 1845, sup: 1101, wind: [[123.75, 146.25], [303.75, 326.25]], url: 'https://www.paraglidingearth.com/?site=15132'},
+  {key: '43.281731 27.11965', name: 'Madara', lat: 43.281731, lon: 27.11965, alt: 395, sup: 214, wind: [[303.75, 326.25]], url: 'https://www.paraglidingearth.com/?site=9847'},
+];
+const SITES_API = 'https://pg.vrana.cz/xcontest/pgmapa.php?locale=en';
+const OM_MODELS = [
+  {id: 'ecmwf_ifs025', label: 'ECMWF'},
+  {id: 'icon_seamless', label: 'ICON'},
+  {id: 'gfs_seamless', label: 'GFS'},
+];
+const OM_SURFACE = ['temperature_2m', 'dew_point_2m', 'wind_speed_10m', 'wind_direction_10m', 'wind_gusts_10m', 'precipitation', 'precipitation_probability', 'cloud_cover', 'cloud_cover_low', 'cloud_cover_mid', 'cape', 'is_day'];
+const OM_LEVEL_VARS = ['temperature', 'dew_point', 'wind_speed', 'wind_direction', 'geopotential_height'];
+const LEVELS = [1000, 925, 850, 800, 700, 600, 500];
+const WINDY_MODELS = [{id: 'gfs', label: 'Windy GFS'}, {id: 'iconEu', label: 'Windy ICON-EU'}];
+const WINDOW = [10, 17]; // local hours considered for the day score (inclusive start hours)
+const PROFILES = {
+  novice: {label: 'Novice', wind: 4, gust: 6, spread: 3, upper: 7},
+  pilot: {label: 'Intermediate', wind: 6, gust: 8.5, spread: 4.5, upper: 10},
+  expert: {label: 'Expert', wind: 8, gust: 11, spread: 6, upper: 13},
+};
+const BANDS = [[75, 4, 'Good'], [60, 3, 'Flyable'], [40, 2, 'Marginal'], [20, 1, 'Poor'], [-1, 0, 'No-go']];
+
+const SNAP = JSON.parse(document.getElementById('snapshot').textContent || 'null');
+
+// ---------- storage ----------
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('lw.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+  set(k, v) { try { localStorage.setItem('lw.' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+};
+
+const state = {
+  profile: store.get('profile', 'pilot'),
+  sites: SNAP ? SNAP.sites : store.get('sites', DEFAULT_SITES),
+  omOn: store.get('omOn', OM_MODELS.map(m => m.id)),
+  keys: SNAP ? {} : store.get('keys', {windy: '', mb: ''}),
+  data: {},     // siteKey -> {offset, elev, models: [{id, label, hours: {key: hour}}], errors: []}
+  loading: new Set(),
+  sel: {site: null, date: null, hour: null, model: null},
+  allSites: null,
+};
+
+// ---------- helpers ----------
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+const compass = d => COMPASS[Math.round(((d % 360) + 360) % 360 / 22.5) % 16];
+const band = s => BANDS.find(b => s > b[0]);
+const pad = n => String(n).padStart(2, '0');
+const hourKeyFromMs = ms => new Date(ms).toISOString().slice(0, 13); // "YYYY-MM-DDTHH" in whatever clock ms was shifted to
+const sectorText = w => w.map(([a, b]) => `${compass(a)}–${compass(b)}`).join(', ');
+function uvToDir(u, v) { return ((270 - Math.atan2(v, u) * 180 / Math.PI) % 360 + 360) % 360; }
+function dirToUv(ws, wd) { const r = wd * Math.PI / 180; return [-ws * Math.sin(r), -ws * Math.cos(r)]; }
+function dewFromRh(t, rh) { const a = 17.62, b = 243.12, g = Math.log(Math.max(rh, 1) / 100) + a * t / (b + t); return b * g / (a - g); }
+/** [10, 11, 12, 15] -> "10–13, 15–16" */
+function hourRanges(hrs) {
+  const out = [];
+  for (const h of hrs) { const last = out[out.length - 1]; if (last && last[1] === h) last[1] = h + 1; else out.push([h, h + 1]); }
+  return out.map(([a, b]) => `${pad(a)}–${pad(b)}`).join(', ');
+}
+function isDirIn(dir, from, to, tol = 0) {
+  to += to < from ? 360 : 0;
+  return (dir >= from - tol && dir <= to + tol) || dir <= to + tol - 360 || dir >= from - tol + 360;
+}
+
+// ---------- fetching ----------
+function omUrl(site) {
+  const hourly = OM_SURFACE.concat(...LEVELS.map(p => OM_LEVEL_VARS.map(v => `${v}_${p}hPa`)));
+  return 'https://api.open-meteo.com/v1/forecast?latitude=' + site.lat + '&longitude=' + site.lon
+    + '&hourly=' + hourly.join(',') + '&models=' + OM_MODELS.map(m => m.id).join(',')
+    + '&wind_speed_unit=ms&timezone=auto&forecast_days=7';
+}
+
+function parseOpenMeteo(json) {
+  const h = json.hourly;
+  const models = OM_MODELS.map(m => {
+    const col = v => h[`${v}_${m.id}`] || [];
+    const hours = {};
+    h.time.forEach((t, i) => {
+      const ws = col('wind_speed_10m')[i];
+      if (ws == null) return;
+      const lv = [];
+      for (const p of LEVELS) {
+        const z = col(`geopotential_height_${p}hPa`)[i], t2 = col(`temperature_${p}hPa`)[i];
+        if (z == null || t2 == null) continue;
+        lv.push({p, z, t: t2, td: col(`dew_point_${p}hPa`)[i], ws: col(`wind_speed_${p}hPa`)[i], wd: col(`wind_direction_${p}hPa`)[i]});
+      }
+      hours[t.slice(0, 13)] = {
+        ws, wd: col('wind_direction_10m')[i], g: col('wind_gusts_10m')[i],
+        pr: col('precipitation')[i], pp: col('precipitation_probability')[i],
+        cc: col('cloud_cover')[i], cl: col('cloud_cover_low')[i], cm: col('cloud_cover_mid')[i],
+        t: col('temperature_2m')[i], td: col('dew_point_2m')[i], cape: col('cape')[i], day: col('is_day')[i],
+        lv,
+      };
+    });
+    return {id: m.id, label: m.label, source: 'Open-Meteo', hours};
+  }).filter(m => Object.keys(m.hours).length);
+  return {offset: json.utc_offset_seconds || 0, elev: json.elevation, models};
+}
+
+// Must match WINDY_LEVELS / WINDY_PARAMS in snapshot.py.
+const WINDY_LEVELS = ['surface', '850h', '800h', '700h', '600h', '500h'];
+const WINDY_PARAMS = ['wind', 'windGust', 'precip', 'lclouds', 'mclouds', 'hclouds', 'temp', 'dewpoint', 'cape', 'gh'];
+
+async function fetchWindy(site, model, offset) {
+  const res = await fetch('https://api.windy.com/api/point-forecast/v2', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({lat: site.lat, lon: site.lon, model: model.id, parameters: WINDY_PARAMS, levels: WINDY_LEVELS, key: state.keys.windy}),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`${model.label}: ${j.message || 'HTTP ' + res.status}`);
+  return parseWindy(j, model, offset);
+}
+
+/** Normalizes a Windy Point Forecast response. Trial keys return shuffled data, flagged as test so it isn't scored. */
+function parseWindy(j, model, offset) {
+  const levels = WINDY_LEVELS;
+  const g = (k, i) => (j[k] || [])[i];
+  const hours = {};
+  (j.ts || []).forEach((ts, i) => {
+    const u = g('wind_u-surface', i), v = g('wind_v-surface', i);
+    if (u == null) return;
+    const lv = [];
+    for (const L of levels.slice(1)) {
+      const z = g('gh-' + L, i), t = g('temp-' + L, i);
+      if (z == null || t == null) continue;
+      const lu = g('wind_u-' + L, i), lvv = g('wind_v-' + L, i), td = g('dewpoint-' + L, i);
+      lv.push({p: parseInt(L), z, t: t - 273.15, td: td == null ? null : td - 273.15, ws: Math.hypot(lu, lvv), wd: uvToDir(lu, lvv)});
+    }
+    const pr3 = g('past3hprecip-surface', i);
+    const t = g('temp-surface', i), td = g('dewpoint-surface', i);
+    const lc = g('lclouds-surface', i), mc = g('mclouds-surface', i), hc = g('hclouds-surface', i);
+    hours[hourKeyFromMs(ts + offset * 1000)] = {
+      ws: Math.hypot(u, v), wd: uvToDir(u, v), g: g('gust-surface', i),
+      pr: pr3 == null ? null : pr3 * 1000 / 3, pp: null,
+      cc: lc == null ? null : Math.max(lc, mc || 0, hc || 0), cl: lc, cm: mc,
+      t: t == null ? null : t - 273.15, td: td == null ? null : td - 273.15, cape: g('cape-surface', i), day: null, lv,
+    };
+  });
+  const test = /testing|shuffled/i.test(j.warning || '');
+  return {id: 'windy_' + model.id, label: model.label + (test ? ' (trial)' : ''), source: 'Windy', test, hours};
+}
+
+async function fetchMeteoblue(site, offset) {
+  const url = 'https://my.meteoblue.com/packages/basic-1h_wind-1h_clouds-1h?lat=' + site.lat + '&lon=' + site.lon
+    + (site.alt ? '&asl=' + site.alt : '') + '&format=json&windspeed=ms-1&apikey=' + encodeURIComponent(state.keys.mb);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Meteoblue: HTTP ${res.status}`);
+  const j = await res.json();
+  const d = j.data_1h || {};
+  const mbOff = (j.metadata && j.metadata.utc_timeoffset) || 0;
+  const hours = {};
+  (d.time || []).forEach((tm, i) => {
+    const ws = (d.windspeed || [])[i];
+    if (ws == null) return;
+    const utc = Date.parse(tm.replace(' ', 'T') + ':00Z') - mbOff * 3600e3;
+    const t = (d.temperature || [])[i], rh = (d.relativehumidity || [])[i];
+    hours[hourKeyFromMs(utc + offset * 1000)] = {
+      ws, wd: (d.winddirection || [])[i], g: (d.gust || [])[i],
+      pr: (d.precipitation || [])[i], pp: (d.precipitation_probability || [])[i],
+      cc: (d.totalcloudcover || [])[i], cl: (d.lowclouds || [])[i], cm: (d.midclouds || [])[i],
+      t, td: t != null && rh != null ? dewFromRh(t, rh) : null, cape: null, day: (d.isdaylight || [])[i], lv: [],
+    };
+  });
+  return {id: 'meteoblue', label: 'Meteoblue', source: 'Meteoblue', hours};
+}
+
+async function loadSite(site) {
+  state.loading.add(site.key);
+  renderBoard();
+  const rec = {offset: 0, elev: site.alt, models: [], errors: []};
+  try {
+    const raw = SNAP ? SNAP.om[site.key] : await fetchJsonRetry(omUrl(site));
+    if (!raw || !raw.hourly) throw new Error(raw && raw.reason ? raw.reason : 'no data');
+    Object.assign(rec, parseOpenMeteo(raw));
+  } catch (e) {
+    rec.errors.push('Open-Meteo: ' + e.message);
+  }
+  const extra = [];
+  if (SNAP) WINDY_MODELS.forEach(m => { const raw = SNAP.windy && SNAP.windy[site.key] && SNAP.windy[site.key][m.id]; if (raw) extra.push(Promise.resolve(parseWindy(raw, m, rec.offset))); });
+  else if (state.keys.windy) WINDY_MODELS.forEach(m => extra.push(fetchWindy(site, m, rec.offset)));
+  if (!SNAP && state.keys.mb) extra.push(fetchMeteoblue(site, rec.offset));
+  for (const r of await Promise.allSettled(extra)) {
+    if (r.status === 'fulfilled' && Object.keys(r.value.hours).length) rec.models.push(r.value);
+    else if (r.status === 'rejected') rec.errors.push(r.reason.message);
+  }
+  state.data[site.key] = rec;
+  state.loading.delete(site.key);
+  renderBoard();
+  if (state.sel.site === site.key || !state.sel.site) autoSelect();
+}
+
+async function fetchJsonRetry(url) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url);
+    if (res.status === 429 && attempt < 3) { await new Promise(r => setTimeout(r, 1500 * (attempt + 1))); continue; }
+    return res.json();
+  }
+}
+
+/** Loads sites two at a time; Open-Meteo rejects bursts of concurrent requests. */
+async function loadAll() {
+  state.data = {};
+  const queue = state.sites.slice();
+  const worker = async () => { while (queue.length) await loadSite(queue.shift()); };
+  await Promise.all([worker(), worker()]);
+}
+
+// ---------- meteorology ----------
+/** Interpolates wind at altitude z (m AMSL) from the 10 m wind and pressure levels above ground. */
+function windAt(h, elev, z) {
+  const pts = [{z: elev + 10, ws: h.ws, wd: h.wd}].concat(h.lv.filter(l => l.z > elev + 10 && l.ws != null && l.wd != null)).sort((a, b) => a.z - b.z);
+  if (z <= pts[0].z) return pts[0];
+  for (let i = 1; i < pts.length; i++) {
+    if (z <= pts[i].z) {
+      const a = pts[i - 1], b = pts[i], f = (z - a.z) / (b.z - a.z);
+      const [u1, v1] = dirToUv(a.ws, a.wd), [u2, v2] = dirToUv(b.ws, b.wd);
+      const u = u1 + (u2 - u1) * f, v = v1 + (v2 - v1) * f;
+      return {z, ws: Math.hypot(u, v), wd: uvToDir(u, v)};
+    }
+  }
+  return null; // above highest level: unknown
+}
+
+/** Dry-adiabatic parcel from the 2 m temperature: thermal top where it meets the environment, cloud base from the spread. */
+function thermals(h, elev) {
+  if (h.t == null) return null;
+  const cb = h.td != null ? elev + Math.max(0, h.t - h.td) * 122 : null;
+  const parcel = z => h.t - 0.0098 * (z - elev);
+  let prev = {z: elev, d: 0};
+  let top = null;
+  for (const l of h.lv.filter(l => l.z > elev).sort((a, b) => a.z - b.z)) {
+    const d = l.t - parcel(l.z);
+    if (d >= 0) { top = d === prev.d ? prev.z : prev.z + (l.z - prev.z) * (0 - prev.d) / (d - prev.d); break; }
+    prev = {z: l.z, d};
+  }
+  if (top == null) top = prev.z;
+  return {cb, top: cb != null ? Math.min(top, cb) : top, dryTop: top, cu: cb != null && top > cb};
+}
+
+// ---------- scoring ----------
+/** A measured value with its threshold. kind 'max': bad above the limit; 'min': bad below it. */
+function measure(label, value, unit, limit, kind = 'max', scale) {
+  return {label, value, unit, limit, kind, scale};
+}
+
+/** Degrees between a wind direction and the nearest usable sector (0 inside a sector). */
+function sectorOffset(dir, sectors) {
+  let best = 180;
+  for (const [a, b] of sectors) {
+    if (isDirIn(dir, a, b)) return 0;
+    const d = x => Math.min(Math.abs(dir - x) % 360, 360 - Math.abs(dir - x) % 360);
+    best = Math.min(best, d(a), d(b));
+  }
+  return best;
+}
+
+const fmtVal = (v, unit) => unit === 'm/s' || unit === 'mm/h' ? v.toFixed(1) : Math.round(v).toString();
+
+/** One bar per measured value, in its unit, with the threshold as a red line. */
+function measureBar(m, last, detail) {
+  const max = m.scale || Math.max(m.kind === 'min' ? m.limit * 3 : m.limit * 1.6, m.value * 1.1);
+  const pct = v => clamp(v / max * 100, 0, 100);
+  const over = m.kind === 'max' ? m.value > m.limit : m.value < m.limit;
+  const near = !over && (m.kind === 'max' ? m.value > m.limit * 0.75 : m.value < m.limit * 1.5);
+  const tone = over ? 0 : near ? 1 : 4;
+  const limTxt = `${m.kind === 'max' ? 'max' : 'min'} ${m.limit}`;
+  return `<div class="factor"${tip(m.label, `${MEAS_HELP[m.label] || ''}\nNow ${fmtVal(m.value, m.unit)} ${m.unit}. Red line: ${m.kind === 'max' ? 'maximum' : 'minimum'} ${m.limit} ${m.unit}.`)}>
+    <span class="fl">${esc(m.label)}</span>
+    <span class="track"><i style="width:${Math.max(1.5, pct(m.value))}%;background:var(--dot${tone})"></i><b class="lim" style="left:${pct(m.limit)}%"></b><em class="limtxt" style="left:${pct(m.limit)}%">${limTxt}</em></span>
+    <span class="mono val${over ? ' bad' : ''}">${fmtVal(m.value, m.unit)} <small>${m.unit}</small></span>
+    ${last ? `<span class="d">${esc(detail)}</span>` : ''}</div>`;
+}
+
+function scoreHour(site, h, elev, P) {
+  if (h.ws == null || h.wd == null) return null;
+  const f = [];
+  // meas: the measured values behind a factor, each drawn as a bar in its own unit with the threshold marked.
+  const add = (key, label, v, detail, meas = []) => f.push({key, label, v: clamp(v, 0, 1), detail, meas: meas.filter(m => m.value != null)});
+  const ws = h.ws;
+
+  add('wind', 'Wind speed',
+    ws <= P.wind * 0.7 ? 1 : ws <= P.wind ? 1 - 0.6 * (ws - P.wind * 0.7) / (P.wind * 0.3) : 0.4 - (ws - P.wind) * 0.2,
+    `${ws.toFixed(1)} m/s at the launch; your limit is ${P.wind} m/s`, [measure('Wind speed', ws, 'm/s', P.wind)]);
+
+  const dirTxt = `${compass(h.wd)} ${Math.round(h.wd)}°`;
+  const dm = site.wind && site.wind.length ? [measure('Off the sector', sectorOffset(h.wd, site.wind), '°', 22.5, 'max', 180)] : [];
+  if (!site.wind || !site.wind.length) add('dir', 'Direction', 0.75, `${dirTxt}. This launch has no orientation on record`);
+  else if (ws < 1.5) add('dir', 'Direction', 0.9, `${dirTxt}, light and variable`, dm);
+  else if (site.opt && site.opt.some(([a, b]) => isDirIn(h.wd, a, b))) add('dir', 'Direction', 1, `${dirTxt}, in the optimal sector (${sectorText(site.opt)})`, dm);
+  else if (site.wind.some(([a, b]) => isDirIn(h.wd, a, b))) add('dir', 'Direction', site.opt ? 0.85 : 1, `${dirTxt}, onto the launch (${sectorText(site.wind)})` + (site.opt ? `, outside the optimal ${sectorText(site.opt)}` : ''), dm);
+  else if (site.wind.some(([a, b]) => isDirIn(h.wd, a, b, 22.5))) add('dir', 'Direction', 0.6, `${dirTxt}, cross to the launch (${sectorText(site.wind)})`, dm);
+  else add('dir', 'Direction', 0.05, `${dirTxt}, off the launch. It needs ${sectorText(site.wind)}`, dm);
+
+  // Lee side: a calm model wind at the launch can sit under flow coming over the back of the ridge (rotor).
+  if (site.wind && site.wind.length) {
+    const back = [300, 600, 1000].map(dz => windAt(h, elev, site.alt + dz))
+      .filter(w => w && !site.wind.some(([a, b]) => isDirIn(w.wd, a, b, 22.5)))
+      .reduce((a, w) => (!a || w.ws > a.ws ? w : a), null);
+    if (back && back.ws >= 1) add('lee', 'Lee side', back.ws >= 2 ? 0.1 : 0.6,
+      `${back.ws.toFixed(1)} m/s from ${compass(back.wd)} ${Math.round(back.wd)}° at ${Math.round(back.z)} m blows over the back of the launch, so expect rotor`,
+      [measure('Wind from behind', back.ws, 'm/s', 2)]);
+  }
+
+  if (h.g != null) {
+    // Two things hurt: the gust peak itself, and the gust spread above the mean wind (turbulence). Both ramp in before the limit.
+    const spread = Math.max(0, h.g - ws);
+    const peak = h.g <= P.gust * 0.75 ? 1 : h.g <= P.gust ? 1 - 0.3 * (h.g - P.gust * 0.75) / (P.gust * 0.25) : 0.5 - (h.g - P.gust) * 0.15;
+    const turb = spread <= P.spread * 0.6 ? 1 : spread <= P.spread ? 1 - 0.25 * (spread - P.spread * 0.6) / (P.spread * 0.4) : Math.max(0.15, 0.55 - (spread - P.spread) * 0.1);
+    add('gust', 'Gusts', Math.min(peak, turb), `gusts to ${h.g.toFixed(1)} m/s (your limit is ${P.gust}), ${spread.toFixed(1)} m/s above the mean wind`
+      + (turb < peak ? ', so expect turbulent air' : ''), [measure('Gusts', h.g, 'm/s', P.gust), measure('Gust spread', spread, 'm/s', P.spread)]);
+  }
+
+  const up = windAt(h, elev, site.alt + 1000);
+  if (up) add('upper', 'Wind aloft', up.ws <= P.upper ? 1 : up.ws <= P.upper + 4 ? 0.45 : 0.15,
+    `${up.ws.toFixed(1)} m/s from ${compass(up.wd)} at ${Math.round(site.alt + 1000)} m`, [measure('Wind aloft', up.ws, 'm/s', P.upper)]);
+
+  const pr = h.pr || 0, pp = h.pp;
+  add('rain', 'Rain',
+    pr >= 1 ? 0 : pr >= 0.2 ? 0.25 : pp != null && pp >= 70 ? 0.45 : pp != null && pp >= 40 ? 0.75 : pr > 0.05 ? 0.8 : 1,
+    `${pr.toFixed(1)} mm/h` + (pp != null ? `, ${pp}% chance` : ''), [measure('Rain', pr, 'mm/h', 0.2, 'max', 2), measure('Rain chance', pp, '%', 40, 'max', 100)]);
+
+  const th = thermals(h, elev);
+  const cm = [measure('Cloud base above launch', th && th.cb != null ? th.cb - site.alt : null, 'm', 150, 'min'), measure('Low cloud', h.cl, '%', 85, 'max', 100)];
+  if (th && th.cb != null && th.cb < site.alt + 150) add('cloud', 'Cloud base', 0.15, `cloud base about ${Math.round(th.cb)} m, so the launch is probably in cloud`, cm);
+  else if (h.cl != null && h.cl >= 85) add('cloud', 'Cloud base', 0.6, `${h.cl}% low cloud`, cm);
+  else add('cloud', 'Cloud base', 1, th && th.cb != null ? `cloud base about ${Math.round(th.cb)} m` + (h.cl != null ? `, ${h.cl}% low cloud` : '') : 'no cloud data', cm);
+
+  if (th) {
+    const agl = th.top - site.alt;
+    let v = agl < 150 ? 0.75 : agl < 600 ? 0.9 : 1;
+    const shaded = (h.cm != null && h.cm >= 90) || (h.cc != null && h.cc >= 95);
+    if (shaded) v *= 0.85;
+    add('thermal', 'Thermals', v, agl < 150 ? 'little lift expected, sled-ride conditions' + (shaded ? ', overcast' : '')
+      : `usable to about ${Math.round(th.top)} m (${Math.round(agl)} m above the launch)` + (th.cu ? ', with cumulus' : ', blue') + (shaded ? ', shaded by cloud' : ''),
+      [measure('Thermal top above launch', Math.max(0, agl), 'm', 600, 'min')]);
+  }
+
+  if (h.cape != null) {
+    const v = h.cape >= 1500 && (pp || 0) >= 30 ? 0.25 : h.cape >= 1000 ? 0.6 : h.cape >= 500 ? 0.85 : 1;
+    add('storm', 'Storm risk', v, `CAPE ${Math.round(h.cape)} J/kg` + (v < 1 ? ', watch for overdevelopment' : ''), [measure('CAPE', h.cape, 'J/kg', 1000)]);
+  }
+
+  const score = Math.round(100 * f.reduce((p, x) => p * x.v, 1));
+  return {score, factors: f, limiting: f.reduce((a, b) => (b.v < a.v ? b : a))};
+}
+
+/** Mean wind: direction from the vector average, speed as the plain average (opposing winds don't cancel to calm). */
+function meanWind(list) {
+  list = list.filter(w => w && w.ws != null && w.wd != null);
+  if (!list.length) return null;
+  let u = 0, v = 0;
+  for (const w of list) { const [a, b] = dirToUv(Math.max(w.ws, 0.1), w.wd); u += a; v += b; }
+  return {ws: list.reduce((t, w) => t + w.ws, 0) / list.length, wd: uvToDir(u, v)};
+}
+
+/** Small windsock pointing downwind; each filled stripe is about 1.5 m/s, all four from 6 m/s (like a real sock filling out). */
+function windsock(w) {
+  if (!w) return '';
+  const lit = w.ws < 0.7 ? 0 : Math.min(4, Math.ceil(w.ws / 1.5));
+  const segs = [0, 1, 2, 3].map(i => {
+    const y0 = 1 + i * 2, y1 = y0 + 2, half = y => 3 - (y - 1) * 0.2;
+    return `<polygon class="${i < lit ? (i % 2 ? 'sk-w' : 'sk-o') : 'sk-off'}" points="${-half(y0)},${y0} ${half(y0)},${y0} ${half(y1)},${y1} ${-half(y1)},${y1}"/>`;
+  }).join('');
+  return `<span class="sock"><svg viewBox="-9 -9 18 18" aria-hidden="true"><g transform="rotate(${Math.round(w.wd)})">${segs}</g><circle class="sk-mast" r="1.3"/></svg><span>${w.ws.toFixed(1)}</span></span>`;
+}
+
+function windowKeys(model, date) {
+  const keys = [];
+  for (let hr = WINDOW[0]; hr <= WINDOW[1]; hr++) { const k = `${date}T${pad(hr)}`; if (model.hours[k]) keys.push(k); }
+  return keys;
+}
+
+/** Day score for one model: best 3-hour stretch inside the flying window. */
+function scoreDay(site, rec, model, date, P) {
+  const keys = windowKeys(model, date);
+  if (!keys.length) return null;
+  const hrs = keys.map(k => ({k, r: scoreHour(site, model.hours[k], rec.elev, P)})).filter(x => x.r);
+  if (!hrs.length) return null;
+  const n = Math.min(3, hrs.length);
+  let best = -1, at = 0;
+  for (let i = 0; i + n <= hrs.length; i++) {
+    const m = hrs.slice(i, i + n).reduce((s, x) => s + x.r.score, 0) / n;
+    if (m > best) { best = m; at = i; }
+  }
+  const good = hrs.filter(x => x.r.score >= 60).map(x => +x.k.slice(11));
+  const worstInBest = hrs.slice(at, at + n).map(x => x.r).reduce((a, b) => (b.score < a.score ? b : a));
+  const gusts = hrs.slice(at, at + n).map(x => model.hours[x.k].g).filter(g => g != null);
+  return {score: Math.round(best), hours: hrs, good, limiting: worstInBest.limiting, bestKey: hrs[at + Math.floor(n / 2)].k,
+    gust: gusts.length ? Math.max(...gusts) : null, wind: meanWind(hrs.slice(at, at + n).map(x => model.hours[x.k]))};
+}
+
+function consensus(site, date) {
+  const rec = state.data[site.key];
+  if (!rec) return null;
+  const P = PROFILES[state.profile];
+  const per = activeModels(rec).filter(m => !m.test).map(m => ({m, d: scoreDay(site, rec, m, date, P)})).filter(x => x.d);
+  if (!per.length) return null;
+  const scores = per.map(x => x.d.score);
+  const score = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
+  const spread = Math.max(...scores) - Math.min(...scores);
+  const counts = {};
+  per.forEach(x => x.d.good.forEach(h => counts[h] = (counts[h] || 0) + 1));
+  const hrs = Object.keys(counts).map(Number).filter(h => counts[h] * 2 >= per.length).sort((a, b) => a - b);
+  const gusts = per.map(x => x.d.gust).filter(g => g != null);
+  return {score, spread, per, gust: gusts.length ? Math.max(...gusts) : null, wind: meanWind(per.map(x => x.d.wind)), window: hrs.length ? hourRanges(hrs).split(', ').sort((a, b) => (b.slice(3) - b.slice(0, 2)) - (a.slice(3) - a.slice(0, 2)))[0] : '', agree: spread < 15 ? 3 : spread < 30 ? 2 : 1};
+}
+
+const OM_IDS = OM_MODELS.map(m => m.id);
+function activeModels(rec) { return rec.models.filter(m => !OM_IDS.includes(m.id) || state.omOn.includes(m.id)); }
+
+function dates() {
+  const all = new Set();
+  Object.values(state.data).forEach(rec => rec.models.forEach(m => Object.keys(m.hours).forEach(k => all.add(k.slice(0, 10)))));
+  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60e3).toISOString().slice(0, 10);
+  const sorted = [...all].sort();
+  const upcoming = sorted.filter(d => d >= today);
+  return (upcoming.length ? upcoming : sorted).slice(0, 7);
+}
+
+// ---------- hover help ----------
+/** Attributes for a hover popup: a bold title and a plain-text body (newlines kept). */
+const tip = (title, body) => ` data-tip-title="${esc(title)}" data-tip="${esc(body)}"`;
+
+const BAND_HELP = {
+  4: 'Score 76 to 100. Wind, direction, gusts and weather sit comfortably inside your limits for at least 3 hours.',
+  3: 'Score 61 to 75. Flyable, but at least one factor is getting close to your limits.',
+  2: 'Score 41 to 60. Possible but demanding. Check the limiting factor before you go.',
+  1: 'Score 21 to 40. One or more factors are past your limits for most of the window.',
+  0: 'Score 0 to 20. Wrong direction, too much wind, rain or cloud on launch.',
+};
+
+const MODEL_HELP = {
+  ecmwf_ifs025: 'ECMWF IFS, the European Centre\'s global model, at 0.25° (about 25 km). Usually the most reliable for the large-scale wind and weather, but the coarse grid smooths out mountains.',
+  icon_seamless: 'ICON from the German Weather Service (DWD). Open-Meteo uses the finest grid available here: ICON-D2 (2 km) in central Europe, ICON-EU (7 km) elsewhere in Europe, global ICON (13 km) outside it.',
+  gfs_seamless: 'GFS from NOAA (USA), a global model at about 13 to 25 km. A useful third opinion that often differs most in the mountains.',
+  windy_gfs: 'GFS from Windy\'s Point Forecast API, in 3-hour steps.',
+  windy_iconEu: 'ICON-EU (7 km, Europe) from Windy\'s Point Forecast API, in 3-hour steps.',
+  meteoblue: 'Meteoblue\'s forecast from its API.',
+};
+const modelInfo = m => (MODEL_HELP[m.id] || m.label) + (m.test ? ' This comes from a trial API key, which Windy shuffles on purpose, so it is shown but not scored.' : '');
+
+const MEAS_HELP = {
+  'Wind speed': 'Mean wind 10 m above the ground at the launch. Points start dropping at 70% of your profile limit.',
+  'Off the sector': 'How many degrees the wind is outside the launch\'s usable sectors. 0° means it blows up the slope. Up to 22.5° counts as cross wind. Beyond that the wind comes from the side or behind.',
+  'Wind from behind': 'The strongest wind 300 to 1,000 m above the launch that blows from outside the launch sectors. Air flowing over the back of the ridge causes lee rotor, even when the launch itself feels calm.',
+  'Gusts': 'Peak gust speed near the ground. Points start dropping at 75% of your gust limit.',
+  'Gust spread': 'Gusts minus mean wind. A big spread means turbulent, punchy air even when the mean wind is light.',
+  'Wind aloft': 'Wind 1,000 m above the launch, interpolated between pressure levels. Strong wind up there drifts and breaks thermals and pushes you back over the ridge.',
+  'Rain': 'Forecast rain per hour. Over 0.2 mm/h means a wet wing. 1 mm/h or more scores zero.',
+  'Rain chance': 'Probability of rain, for models that provide it. Points start dropping at 40%.',
+  'Cloud base above launch': 'Estimated cumulus base minus launch altitude, from the gap between temperature and dew point (122 m per °C). Below 150 m the launch is probably in cloud.',
+  'Low cloud': 'Share of the sky covered by low cloud. Above 85% the launch is probably overcast or in fog.',
+  'Thermal top above launch': 'How high thermals should reach above the launch: where rising surface air, cooling at the dry adiabatic rate, meets warmer air around it, capped at cloud base. Below 600 m expect weak, low thermals.',
+  'CAPE': 'Energy available for convection, in J/kg. Above 1,000 J/kg towering cumulus and afternoon thunderstorms become likely, especially with rain in the forecast.',
+};
+
+const SOUNDING_HELP = 'Altitude in metres on the left, temperature along the bottom.\nBlack line: air temperature.\nBlue dashed line: dew point. Where it meets the temperature, the air is saturated and forms cloud.\nOrange dotted line: a rising thermal, cooling at the dry adiabatic rate from the ground temperature.\nShaded band: the height range thermals should reach.\nGreen line: launch altitude. Blue dashed horizontal line: estimated cloud base.\nArrows on the right: wind direction (pointing downwind) and speed in m/s at each level.';
+
+function cellTip(c) {
+  const b = band(c.score);
+  const worst = c.per.reduce((a, x) => (x.d.score < a.d.score ? x : a));
+  return `Score ${c.score} of 100: ${b[2]}.\n`
+    + `Models: ${c.per.map(x => `${x.m.label} ${x.d.score}`).join(', ')}. The score is their average.\n`
+    + (c.window ? `Flyable window: ${c.window}h, the hours at least half the models score 60 or more.\n` : 'No hours where most models score 60 or more.\n')
+    + `Agreement: the models are ${c.spread} points apart${c.agree === 3 ? ', so they agree' : c.agree === 2 ? ', so they partly agree' : ', so they disagree'}.\n`
+    + (c.wind ? `Windsock: average wind at the launch in the best window, ${c.wind.ws.toFixed(1)} m/s from ${compass(c.wind.wd)} ${Math.round(c.wind.wd)}°. It points downwind, and each filled stripe is about 1.5 m/s.\n` : '')
+    + (c.gust != null ? `Strongest gust in the best window: ${c.gust.toFixed(1)} m/s.\n` : '')
+    + `Main limit (${worst.m.label}): ${worst.d.limiting.label.toLowerCase()}, ${worst.d.limiting.detail}.`;
+}
+
+function siteTip(site) {
+  return `Launch at ${site.alt || '?'} m above sea level` + (site.sup ? `, ${site.sup} m above the landing field` : '') + '.\n'
+    + (site.wind && site.wind.length ? `Works in wind from ${sectorText(site.wind)}` + (site.opt ? `, best from ${sectorText(site.opt)}` : '') + '.\n' : 'No launch orientation on record.\n')
+    + `Coordinates ${site.lat.toFixed(4)}, ${site.lon.toFixed(4)}.` + (site.closed ? '\nListed as closed or forbidden in Paragliding Mapa.' : '');
+}
+
+function hourTip(x, s, P) {
+  return (s ? `Hour score ${s.score} of 100 (${band(s.score)[2]}).\n` : '')
+    + `Wind ${x.ws.toFixed(1)} m/s from ${compass(x.wd)} ${Math.round(x.wd)}°. The arrow points downwind.\n`
+    + (x.g != null ? `Gusts ${x.g.toFixed(1)} m/s; your limit is ${P.gust} m/s.\n` : '')
+    + `Rain ${(x.pr || 0).toFixed(1)} mm/h` + (x.pp != null ? `, ${x.pp}% chance` : '') + (x.cc != null ? `. Total cloud ${Math.round(x.cc)}%` : '') + '.\n'
+    + (s ? `Weakest factor: ${s.limiting.label.toLowerCase()}, ${s.limiting.detail}.\n` : '')
+    + 'Click the row to show this hour\'s sounding.';
+}
+
+const tipEl = document.createElement('div');
+tipEl.className = 'tip';
+tipEl.setAttribute('role', 'tooltip');
+tipEl.hidden = true;
+document.body.appendChild(tipEl);
+let tipShown = null, tipPending = null, tipTimer;
+
+function showTip(el) {
+  if (!el.isConnected) return;
+  tipShown = el;
+  tipEl.innerHTML = (el.dataset.tipTitle ? `<b>${esc(el.dataset.tipTitle)}</b>` : '') + esc(el.dataset.tip);
+  tipEl.hidden = false;
+  const r = el.getBoundingClientRect(), t = tipEl.getBoundingClientRect();
+  const x = clamp(r.left + r.width / 2 - t.width / 2, 8, innerWidth - t.width - 8);
+  let y = r.bottom + 8;
+  if (y + t.height > innerHeight - 8) y = r.top - t.height - 8;
+  tipEl.style.left = x + 'px';
+  tipEl.style.top = Math.max(8, y) + 'px';
+}
+function hideTip() { clearTimeout(tipTimer); tipShown = tipPending = null; tipEl.hidden = true; }
+
+document.addEventListener('pointerover', e => {
+  if (e.pointerType === 'touch') return;
+  const el = e.target.closest('[data-tip]');
+  if (el === tipShown || el === tipPending) return;
+  hideTip();
+  if (!el) return;
+  tipPending = el;
+  tipTimer = setTimeout(() => showTip(el), 250);
+});
+document.addEventListener('pointerout', e => {
+  const el = e.target.closest('[data-tip]');
+  if (el && !el.contains(e.relatedTarget)) hideTip();
+});
+document.addEventListener('focusin', e => { const el = e.target.closest('[data-tip]'); if (el) { hideTip(); showTip(el); } });
+document.addEventListener('focusout', hideTip);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') hideTip(); });
+addEventListener('scroll', hideTip, {capture: true, passive: true});
+
+// ---------- rendering ----------
+function renderProfile() {
+  $('#profile').innerHTML = Object.entries(PROFILES).map(([k, p]) =>
+    `<button type="button" data-p="${k}" aria-pressed="${k === state.profile}"${tip(`${p.label} profile`, `Limits the scores use: wind at launch ${p.wind} m/s, gusts ${p.gust} m/s, gust spread ${p.spread} m/s, wind 1,000 m above the launch ${p.upper} m/s. Pick the one that fits your wing and experience.`)}>${p.label}</button>`).join('');
+}
+
+function renderStatus() {
+  const bits = [];
+  if (SNAP) bits.push(`<span class="pill snap"${tip('Snapshot', 'Forecasts were saved into this page when it was published. A published page cannot download new data, so run snapshot.py and republish to update it.')}>Snapshot</span> ${SNAP.windy ? 'Open-Meteo · Windy. ' : ''}Forecasts saved ${esc(new Date(SNAP.generated).toLocaleString([], {dateStyle: 'medium', timeStyle: 'short'}))}. This page can't fetch new data. Run <span class="mono">snapshot.py</span> to update it.`);
+  else bits.push(`<span class="pill live"${tip('Live', 'Forecasts are downloaded now, straight from the listed sources.')}>Live</span> Open-Meteo${state.keys.windy ? ' · Windy' : ''}${state.keys.mb ? ' · Meteoblue' : ''}`);
+  if (state.loading.size) bits.push(`Loading ${state.loading.size} site${state.loading.size > 1 ? 's' : ''}…`);
+  const errs = Object.entries(state.data).flatMap(([k, r]) => r.errors.map(e => `${state.sites.find(s => s.key === k)?.name}: ${e}`));
+  if (errs.length) bits.push(`<span class="err">${esc(errs.slice(0, 3).join(' · '))}${errs.length > 3 ? ` (+${errs.length - 3} more)` : ''}</span>`);
+  $('#status').innerHTML = bits.join(' ');
+}
+
+function renderBoard() {
+  renderStatus();
+  const ds = dates();
+  const head = `<thead><tr><th class="site"><span class="label"${tip('Launch', 'Your saved launches with altitude and usable wind directions. Hover a name for details.')}>Launch</span></th>${ds.map(d => {
+    const dt = new Date(d + 'T12:00:00');
+    return `<th><span class="dow">${dt.toLocaleDateString([], {weekday: 'short'})}</span><span class="muted mono">${dt.toLocaleDateString([], {day: 'numeric', month: 'short'})}</span></th>`;
+  }).join('') || '<th></th>'}</tr></thead>`;
+  const rows = state.sites.map(site => {
+    const loading = state.loading.has(site.key);
+    const cells = ds.map(d => {
+      const c = consensus(site, d);
+      if (!c) return `<td><div class="cell nodata">${loading ? '…' : '–'}</div></td>`;
+      const b = band(c.score);
+      const pressed = state.sel.site === site.key && state.sel.date === d;
+      return `<td><button type="button" class="cell b${b[1]}" data-site="${esc(site.key)}" data-date="${d}" aria-pressed="${pressed}"${tip(`${site.name} · ${new Date(d + 'T12:00:00').toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'long'})}`, cellTip(c))}>
+        <span class="n">${c.score}</span>${windsock(c.wind)}<span class="w">${c.window || b[2]}</span>
+        <span class="agree" aria-label="model agreement">${[1, 2, 3].map(i => `<i class="${i <= c.agree ? 'on' : ''}"></i>`).join('')}</span></button></td>`;
+    }).join('');
+    return `<tr><th class="site"><div class="site-name"><span${tip(site.name, siteTip(site))}>${esc(site.name)}</span>${SNAP ? '' : `<button class="x" type="button" data-remove="${esc(site.key)}" aria-label="Remove ${esc(site.name)}"${tip('Remove', `Remove ${site.name} from your list.`)}>×</button>`}</div>
+      <div class="site-meta mono"><span>${site.alt || '?'} m</span><span>${site.wind && site.wind.length ? sectorText(site.wind) : 'orientation ?'}</span>${site.closed ? '<span class="err">closed</span>' : ''}</div></th>${cells || '<td></td>'}</tr>`;
+  }).join('');
+  renderSpots();
+  $('#board').innerHTML = head + `<tbody>${rows || `<tr><td class="muted" style="padding:16px">No sites yet. Search for a launch below.</td></tr>`}</tbody>`;
+}
+
+/** Gust label coloured against the pilot profile: plain under 75% of the limit, amber near it, red over it. */
+function gustTag(g, long = false) {
+  if (g == null) return '';
+  const lim = PROFILES[state.profile].gust;
+  const cls = g > lim ? 'gust over' : g > lim * 0.75 ? 'gust near' : 'gust';
+  return `<span class="${cls}" ${tip('Gusts', `Strongest gust in the best 3-hour window, the highest across the models. Your limit is ${lim} m/s. Amber means near the limit, red means over it.`)}>${long ? 'gusts to ' : 'G '}${g.toFixed(0)}${long ? ' m/s' : ''}</span>`;
+}
+
+/** Best site-days in the forecast, ranked by score; on a tie, calmer gusts win. */
+function bestSpots(limit = 5) {
+  const out = [];
+  for (const s of state.sites) for (const d of dates()) {
+    const c = consensus(s, d);
+    if (c && c.score >= 40) out.push({s, d, c});
+  }
+  return out.sort((a, b) => b.c.score - a.c.score || (a.c.gust ?? 99) - (b.c.gust ?? 99)).slice(0, limit);
+}
+
+function renderSpots() {
+  const spots = bestSpots();
+  const el = $('#spots');
+  if (!Object.keys(state.data).length) { el.innerHTML = ''; return; }
+  el.innerHTML = `<h3><span${tip('Best spots', 'The highest-scoring launch-days in the forecast, 40 or more. On a tied score, calmer gusts rank first. Click one to open its details.')}>Best spots</span></h3>` + (spots.length ? `<div class="spot-list">${spots.map(({s, d, c}) => {
+    const b = band(c.score);
+    const dt = new Date(d + 'T12:00:00');
+    return `<button type="button" class="spot" data-site="${esc(s.key)}" data-date="${d}"${tip(`${s.name} · ${dt.toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'long'})}`, cellTip(c))}>
+      <span class="chip b${b[1]}">${c.score}</span>
+      <span class="spot-txt"><b>${esc(s.name)}</b><small>${dt.toLocaleDateString([], {weekday: 'short', day: 'numeric', month: 'short'})}${c.window ? ' · ' + c.window + 'h' : ''} · ${gustTag(c.gust, true)}</small></span></button>`;
+  }).join('')}</div>` : `<p class="note">No site scores 40 or more in the next ${dates().length} days for the ${PROFILES[state.profile].label.toLowerCase()} profile.</p>`);
+}
+
+function renderLegend() {
+  $('#legend').innerHTML = BANDS.map(b => `<span${tip(b[2], BAND_HELP[b[1]])}><b class="b${b[1]}"></b>${b[2]}${b[0] >= 0 ? ` (${b[0] + 1}+)` : ''}</span>`).join('')
+    + `<span${tip('How the score works', `Every hour gets 0 to 100: the product of the factors shown under the sounding (wind, direction, lee side, gusts, wind aloft, rain, cloud base, thermals, storm risk). A day's score is the best 3-hour stretch between ${pad(WINDOW[0])}:00 and ${pad(WINDOW[1] + 1)}:00 for each model, averaged across the models.`)}>Score = best 3 hours between ${pad(WINDOW[0])}:00 and ${pad(WINDOW[1] + 1)}:00, averaged across models</span><span${tip('Model agreement', 'Three dots: the models\' day scores are within 15 points. Two dots: within 30. One dot: the models disagree, so the score is less certain.')}><span class="agree"><i class="on"></i><i class="on"></i><i class="on"></i></span> models agree</span>`;
+}
+
+function autoSelect() {
+  const ds = dates();
+  if (!ds.length) return;
+  let best = null;
+  if (!state.sel.site) {
+    best = bestSpots(1)[0];
+    if (!best) for (const s of state.sites) { const c = consensus(s, ds[0]); if (c && (!best || c.score > best.c.score)) best = {s, d: ds[0], c}; }
+    if (!best) return;
+    select(best.s.key, best.d);
+  } else if (state.sel.date) select(state.sel.site, state.sel.date, state.sel.hour, state.sel.model);
+}
+
+function select(siteKey, date, hour, model) {
+  const site = state.sites.find(s => s.key === siteKey);
+  const rec = state.data[siteKey];
+  if (!site || !rec) return;
+  const c = consensus(site, date);
+  const models = activeModels(rec);
+  if (!model || !models.find(m => m.id === model)) model = (models.find(m => Object.values(m.hours).some(x => x.lv.length)) || models[0])?.id;
+  if (!hour) hour = c ? c.per[0].d.bestKey : `${date}T13`;
+  state.sel = {site: siteKey, date, hour, model};
+  document.querySelectorAll('.cell[aria-pressed]').forEach(b => b.setAttribute('aria-pressed', b.dataset.site === siteKey && b.dataset.date === date));
+  renderDetail();
+}
+
+function rose(site, wd, ws) {
+  const cx = 46, cy = 46, r = 36;
+  const pt = (deg, rr) => [cx + rr * Math.sin(deg * Math.PI / 180), cy - rr * Math.cos(deg * Math.PI / 180)];
+  const secs = (site.wind || []).map(([a, b]) => {
+    const to = b < a ? b + 360 : b;
+    const [x1, y1] = pt(a, r), [x2, y2] = pt(to, r);
+    return `<path class="sec" d="M${cx} ${cy}L${x1.toFixed(1)} ${y1.toFixed(1)}A${r} ${r} 0 ${to - a > 180 ? 1 : 0} 1 ${x2.toFixed(1)} ${y2.toFixed(1)}Z"/>`;
+  }).join('');
+  let arrow = '';
+  if (wd != null) {
+    // arrow flows downwind: from the side the wind comes from, through the centre
+    const [x1, y1] = pt(wd, r - 2), [x2, y2] = pt(wd + 180, r - 12);
+    arrow = `<line class="ar" x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`
+      + `<polygon class="arh" transform="rotate(${wd + 180} ${x2.toFixed(1)} ${y2.toFixed(1)})" points="${x2.toFixed(1)},${(y2 - 7).toFixed(1)} ${(x2 - 5).toFixed(1)},${(y2 + 2).toFixed(1)} ${(x2 + 5).toFixed(1)},${(y2 + 2).toFixed(1)}"/>`;
+  }
+  return `<svg class="rose" viewBox="0 0 92 92" role="img"${tip('Wind rose', 'Green wedges are the wind directions this launch works in. The arrow is the forecast wind for the selected hour and model, pointing downwind. A good hour has the arrow blowing out of a green wedge, straight up the slope.')} aria-label="Launch sectors ${esc(site.wind ? sectorText(site.wind) : 'unknown')}; wind from ${wd != null ? compass(wd) : '?'}">
+    <circle class="ring" cx="${cx}" cy="${cy}" r="${r}"/>${secs}${arrow}
+    <text x="${cx}" y="8" text-anchor="middle">N</text><text x="88" y="${cy + 3}" text-anchor="end">E</text><text x="${cx}" y="91" text-anchor="middle">S</text><text x="3" y="${cy + 3}">W</text></svg>`;
+}
+
+function renderDetail() {
+  const {site: key, date, hour, model: modelId} = state.sel;
+  const site = state.sites.find(s => s.key === key);
+  const rec = site && state.data[key];
+  const el = $('#detail');
+  if (!rec) { el.innerHTML = '<p class="muted">Pick a cell on the board to see the hourly forecast and sounding for that site and day.</p>'; return; }
+  const P = PROFILES[state.profile];
+  const c = consensus(site, date);
+  const models = activeModels(rec);
+  const model = models.find(m => m.id === modelId) || models[0];
+  const h = model && model.hours[hour];
+  const b = c ? band(c.score) : null;
+  const dt = new Date(date + 'T12:00:00');
+  const windyUrl = `https://www.windy.com/${site.lat.toFixed(3)}/${site.lon.toFixed(3)}?${site.lat.toFixed(3)},${site.lon.toFixed(3)},11`;
+  const mbUrl = `https://www.meteoblue.com/en/weather/week/${Math.abs(site.lat).toFixed(3)}${site.lat >= 0 ? 'N' : 'S'}${Math.abs(site.lon).toFixed(3)}${site.lon >= 0 ? 'E' : 'W'}`;
+
+  const modelCards = c ? c.per.map(({m, d}) => {
+    const mb = band(d.score);
+    return `<div class="model"><div class="top"><span class="label"${tip(m.label, modelInfo(m))}>${esc(m.label)}</span><span class="sc chip b${mb[1]}"${tip(`${m.label} day score`, `This model's best 3-hour stretch between ${pad(WINDOW[0])}:00 and ${pad(WINDOW[1] + 1)}:00 scores ${d.score}. Flyable hours are hours scoring 60 or more. The limit line names the weakest factor in that stretch.`)}>${d.score}</span></div>
+      <div class="why">${d.good.length ? `Flyable ${hourRanges(d.good)}` : 'No flyable hour'}${d.gust != null ? ` · ${gustTag(d.gust, true)}` : ''}</div>
+      <div class="why">Limit: ${esc(d.limiting.label.toLowerCase())}, ${esc(d.limiting.detail)}</div></div>`;
+  }).join('') : '<p class="muted">No forecast for this day.</p>';
+
+  const hoursAll = [];
+  for (let hr = 7; hr <= 20; hr++) hoursAll.push(`${date}T${pad(hr)}`);
+  const hourRows = hoursAll.filter(k => models.some(m => m.hours[k])).map(k => {
+    const hr = +k.slice(11);
+    const inWin = hr >= WINDOW[0] && hr <= WINDOW[1];
+    const cells = models.map(m => {
+      const x = m.hours[k];
+      if (!x) return '<td class="muted">–</td>';
+      const s = scoreHour(site, x, rec.elev, P);
+      const sb = s ? band(s.score) : null;
+      return `<td${tip(`${m.label} · ${pad(hr)}:00`, hourTip(x, s, P))}><div class="hc">${sb ? `<span class="chip b${sb[1]}">${s.score}</span>` : ''}<span class="arrow" style="transform:rotate(${Math.round(x.wd)}deg)">↓</span>${x.ws.toFixed(1)}${x.g != null ? `<span class="${x.g > P.gust ? 'gust over' : x.g > P.gust * 0.75 ? 'gust near' : 'muted'}">/${x.g.toFixed(0)}</span>` : ''}${x.pr >= 0.1 ? `<span class="rain">${x.pr.toFixed(1)}mm</span>` : ''}${x.cc != null ? `<span class="muted">☁${Math.round(x.cc)}</span>` : ''}</div></td>`;
+    }).join('');
+    return `<tr class="${k === hour ? 'sel' : ''} ${inWin ? '' : 'outside'}" data-hour="${k}"><th class="mono">${pad(hr)}:00</th>${cells}</tr>`;
+  }).join('');
+
+  const s = h && scoreHour(site, h, rec.elev, P);
+  const factors = s ? s.factors.slice().sort((a, b) => a.v - b.v).map(f => f.meas.length
+    ? f.meas.map((m, i) => measureBar(m, i === f.meas.length - 1, f.detail)).join('')
+    : `<div class="factor"><span class="fl">${esc(f.label)}</span><span class="d" style="grid-column:2/4;margin:0">${esc(f.detail)}</span></div>`).join('') : '';
+
+  el.innerHTML = `
+    <div class="detail-head">
+      <div style="display:flex;gap:14px;align-items:center">
+        ${rose(site, h && h.wd, h && h.ws)}
+        <div style="display:grid;gap:4px">
+          <h2>${esc(site.name)} · ${dt.toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'long'})}</h2>
+          <div class="facts mono"><span${tip('Launch altitude', 'Height of the launch above sea level, from Paragliding Mapa. Cloud base, thermal top and wind aloft are measured from here.')}>Launch ${site.alt || '?'} m</span>${site.sup ? `<span${tip('Height', 'Height of the launch above the landing field.')}>Height ${site.sup} m</span>` : ''}<span${tip('Model ground', 'Terrain height in the forecast at this point. The 2 m temperature and the sounding start here. In steep terrain it can differ from the launch altitude.')}>Model ground ${Math.round(rec.elev)} m</span><span${tip('Sectors', 'Wind directions this launch works in, from Paragliding Mapa.' + (site.opt ? ` The optimal sector is ${sectorText(site.opt)}.` : ''))}>Sectors ${site.wind && site.wind.length ? sectorText(site.wind) : 'unknown'}</span></div>
+          <div class="facts"><a href="${windyUrl}" target="_blank" rel="noopener"${tip('Windy', 'Open this launch on Windy.com to compare models, soundings and the wind map.')}>Windy</a><a href="${mbUrl}" target="_blank" rel="noopener"${tip('Meteoblue', 'Open the Meteoblue week forecast for this launch, including its multimodel and sounding views.')}>Meteoblue</a>${site.url ? `<a href="${esc(site.url)}" target="_blank" rel="noopener"${tip('Site info', 'The launch page in its source database: access, rules and landing fields.')}>Site info</a>` : ''}${site.webcam ? `<a href="${esc(site.webcam)}" target="_blank" rel="noopener"${tip('Webcam', 'Live webcam near the launch, as listed in Paragliding Mapa.')}>Webcam</a>` : ''}</div>
+        </div>
+      </div>
+      ${c ? `<div class="verdict"><span class="big b${b[1]}"${tip(`${site.name} · ${b[2]}`, cellTip(c))}>${c.score}</span><div><div style="font-family:var(--font-display);font-size:1.4rem;font-weight:600">${b[2]}</div><div class="muted">${c.window ? `Best ${c.window}h` : 'No clear window'} · ${['', 'models disagree', 'models partly agree', 'models agree'][c.agree]} (spread ${c.spread})${c.gust != null ? ` · ${gustTag(c.gust, true)}` : ''}</div></div></div>` : ''}
+    </div>
+    ${site.closed ? '<p class="err">Paragliding Mapa lists this launch as closed or forbidden. Check before you go.</p>' : ''}
+    ${siteNotes(site)}
+    <div class="models">${modelCards}</div>
+    ${models.some(m => m.test) ? '<p class="note">Windy columns marked (trial) come from a trial API key. Windy shuffles that data on purpose, so it is shown here but left out of the score. A paid Point Forecast key removes the label.</p>' : ''}
+    <div class="bench">
+      <div style="display:grid;gap:8px;min-width:0">
+        <h3>Hour by hour</h3>
+        <div class="hours-scroll"><table class="hours"><thead><tr><th${tip('Local time', `Local time at the launch. Faded rows fall outside the ${pad(WINDOW[0])}:00 to ${pad(WINDOW[1] + 1)}:00 window used for the day score.`)}>Local</th>${models.map(m => `<th${tip(m.label, modelInfo(m))}>${esc(m.label)}</th>`).join('')}</tr></thead><tbody>${hourRows}</tbody></table></div>
+        <p class="note">Each cell shows the hour score, wind at the launch (arrow points downwind, mean/gust in m/s), rain and total cloud %. Click a row to update the sounding.</p>
+      </div>
+      <div class="snd-wrap">
+        <div class="snd-tabs"><h3 style="margin-right:auto"><span${tip('Sounding', 'A vertical profile of the air above the launch for the selected hour and model. Click another row in the hour-by-hour table to change the hour.')}>Sounding ${hour ? hour.slice(11) + ':00' : ''}</span></h3>
+          <div class="seg" role="group" aria-label="Sounding model">${models.map(m => `<button type="button" data-model="${m.id}" aria-pressed="${m.id === model?.id}"${tip(m.label, modelInfo(m) + ' Click to show its sounding and factor bars.')}>${esc(m.label)}</button>`).join('')}</div></div>
+        ${h ? sounding(site, rec, h) : '<p class="muted">No data for this hour.</p>'}
+        <div class="factors">${factors}</div>
+      </div>
+    </div>`;
+}
+
+const NOTE_LABELS = {limitations: 'Limitations', air_traffic: 'Airspace', rules: 'Rules'};
+function siteNotes(site) {
+  const items = Object.entries(NOTE_LABELS).filter(([k]) => site.notes && site.notes[k]);
+  if (!items.length) return '';
+  return `<div class="notes">${items.map(([k, label]) => `<div><span class="label">${label}</span><p>${esc(site.notes[k])}</p></div>`).join('')}</div>`;
+}
+
+function sounding(site, rec, h) {
+  const elev = rec.elev;
+  const W = 380, H = 330, L = 44, R = 60, T = 12, B = 26;
+  const zMin = Math.floor(Math.min(elev, site.alt || elev) / 500) * 500;
+  const zMax = Math.max(zMin + 3000, Math.ceil(((site.alt || elev) + 3000) / 500) * 500);
+  const lv = h.lv.filter(l => l.z > elev && l.z <= zMax + 800).sort((a, b) => a.z - b.z);
+  if (!lv.length) return `<p class="note">This source has no upper-air data, so there's no sounding.</p>`;
+  const prof = [{z: elev, t: h.t, td: h.td}].concat(lv);
+  const temps = prof.flatMap(p => [p.t, p.td]).filter(v => v != null);
+  const tMin = Math.floor((Math.min(...temps) - 2) / 5) * 5, tMax = Math.ceil((Math.max(...temps) + 2) / 5) * 5;
+  const x = t => L + (t - tMin) / (tMax - tMin) * (W - L - R);
+  const y = z => T + (1 - (z - zMin) / (zMax - zMin)) * (H - T - B);
+  const line = (pts, cls) => `<polyline class="${cls}" points="${pts.map(p => `${x(p[0]).toFixed(1)},${y(p[1]).toFixed(1)}`).join(' ')}"/>`;
+  let g = `<clipPath id="plot"><rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}"/></clipPath>`;
+  for (let z = zMin; z <= zMax; z += 500) g += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(z)}" y2="${y(z)}"/><text x="${L - 4}" y="${y(z) + 3}" text-anchor="end">${z}</text>`;
+  for (let t = tMin; t <= tMax; t += 5) g += `<line class="grid" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B}"/><text x="${x(t)}" y="${H - B + 13}" text-anchor="middle">${t}°</text>`;
+  const th = thermals(h, elev);
+  let body = '';
+  if (th) {
+    body += `<rect class="therm" x="${L}" y="${y(th.top)}" width="${W - L - R}" height="${Math.max(0, y(elev) - y(th.top))}"/>`;
+    body += line([[h.t, elev], [h.t - 0.0098 * (th.dryTop - elev), th.dryTop]], 'dry');
+    if (th.cb != null && th.cb < zMax) body += `<line class="cb" x1="${L}" x2="${W - R}" y1="${y(th.cb)}" y2="${y(th.cb)}"/><text class="lbl" x="${W - R - 4}" y="${y(th.cb) - 4}" text-anchor="end">cloud base ${Math.round(th.cb)}</text>`;
+    body += `<text class="lbl" x="${L + 4}" y="${y(th.top) - 4}">thermal top ${Math.round(th.top)}</text>`;
+  }
+  if (site.alt) body += `<line class="launch" x1="${L}" x2="${W - R}" y1="${y(site.alt)}" y2="${y(site.alt)}"/><text class="lbl" x="${L + 4}" y="${y(site.alt) + 12}">launch ${site.alt}</text>`;
+  body += line(prof.filter(p => p.t != null).map(p => [p.t, p.z]), 't');
+  body += line(prof.filter(p => p.td != null).map(p => [p.td, p.z]), 'td');
+  let lastY = Infinity;
+  const winds = [{z: elev + 10, ws: h.ws, wd: h.wd}].concat(lv.filter(l => l.ws != null && l.z <= zMax))
+    .filter(w => { const yy = y(w.z); if (lastY - yy < 16) return false; lastY = yy; return true; });
+  const wtxt = winds.map(w => `<text class="wind" x="${W - R + 12}" y="${y(w.z) + 4}" text-anchor="middle" transform="rotate(${Math.round(w.wd)} ${W - R + 12} ${y(w.z)})">↓</text><text x="${W - R + 22}" y="${y(w.z) + 4}">${w.ws.toFixed(0)}</text>`).join('');
+  return `<svg class="snd" viewBox="0 0 ${W} ${H}" role="img"${tip('Reading the sounding', SOUNDING_HELP)} aria-label="Sounding: temperature and dew point by altitude, thermal top ${th ? Math.round(th.top) : '?'} m">
+    ${g}<g clip-path="url(#plot)">${body}</g>${wtxt}
+    <text x="${W - R + 12}" y="${T + 2}" text-anchor="middle">m/s</text></svg>
+    <div class="legend"><span><b style="background:var(--ink)"></b>Temperature</span><span><b style="background:var(--dew)"></b>Dew point</span><span><b style="background:var(--accent)"></b>Dry adiabat from the surface</span><span><b style="background:var(--sector)"></b>Launch</span></div>`;
+}
+
+// ---------- site search ----------
+async function ensureAllSites() {
+  if (state.allSites) return state.allSites;
+  $('#add-note').textContent = 'Loading the site database…';
+  const j = await (await fetch(SITES_API)).json();
+  state.allSites = j.data.map(siteFromApi);
+  $('#add-note').textContent = `${state.allSites.filter(s => !s.closed).length.toLocaleString()} open launches loaded. Sites marked closed in the source are left out.`;
+  return state.allSites;
+}
+
+/** Converts a Paragliding Mapa record (pgmapa.php) into the site shape the app scores. Mirrors site_from_api in snapshot.py. */
+function siteFromApi(s) {
+  const text = v => (v || '').trim();
+  return {
+    key: s.latitude + ' ' + s.longitude, name: s.name, lat: s.latitude, lon: s.longitude, alt: s.altitude, sup: s.superelevation,
+    wind: s.wind_usable_from != null ? [[s.wind_usable_from, s.wind_usable_to]] : s.wind_usable || null,
+    opt: s.wind_optimal_from != null ? [[s.wind_optimal_from, s.wind_optimal_to]] : null,
+    notes: {limitations: text(s.limitations), air_traffic: text(s.air_traffic), rules: text(s.rules)},
+    webcam: ((s.link_webcam || '').match(/https?:\/\/[^\s,;]+/) || [''])[0], url: s.url, flights: s.flights || 0,
+    closed: s.flying_status == 4 || s.active === false,
+    norm: s.name.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase(),
+  };
+}
+
+const metersBetween = (a, b) => Math.hypot((a.lat - b.lat) * 111e3, (a.lon - b.lon) * 111e3 * Math.cos(a.lat * Math.PI / 180));
+const dedupe = list => { const seen = new Set(); return list.filter(x => { const k = JSON.stringify(x); return !seen.has(k) && seen.add(k); }); };
+
+/** Re-reads saved sites from the database: launches within 100 m, or with the same name within 1.5 km, merge into one site. */
+function refreshSite(site, all) {
+  const matches = all.filter(x => metersBetween(site, x) < 100 || (x.name === site.name && metersBetween(site, x) < 1500))
+    .sort((a, b) => metersBetween(site, a) - metersBetween(site, b));
+  if (!matches.length) return site;
+  const near = matches[0], open = matches.filter(x => !x.closed);
+  const use = open.length ? open : matches;
+  const notes = {};
+  for (const k of ['limitations', 'air_traffic', 'rules']) notes[k] = [...new Set(use.map(x => x.notes[k]).filter(Boolean))].join('\n\n');
+  const wind = dedupe(use.flatMap(x => x.wind || []));
+  const opt = dedupe(use.flatMap(x => x.opt || []));
+  return {...site, alt: near.alt, sup: near.sup, wind: wind.length ? wind : null, opt: opt.length ? opt : null, notes,
+    webcam: use.map(x => x.webcam).find(Boolean) || '', url: site.url || near.url, closed: !open.length};
+}
+
+/** Live mode: refresh saved sites from Paragliding Mapa so sectors, altitudes and notes stay current. */
+async function refreshSites() {
+  let all;
+  try { all = await ensureAllSites(); } catch (e) { return; }
+  const before = JSON.stringify(state.sites);
+  state.sites = state.sites.map(s => refreshSite(s, all));
+  if (JSON.stringify(state.sites) === before) return;
+  store.set('sites', state.sites);
+  renderBoard();
+  if (state.sel.site) select(state.sel.site, state.sel.date, state.sel.hour, state.sel.model);
+}
+
+async function search(q) {
+  const box = $('#results');
+  q = q.trim().normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+  if (q.length < 2) { box.hidden = true; return; }
+  let all;
+  try { all = await ensureAllSites(); } catch (e) { $('#add-note').textContent = `Couldn't load the site database (${e.message}). Check your connection, then try again.`; return; }
+  const hits = all.filter(s => !s.closed && s.norm.includes(q)).sort((a, b) => (b.norm.startsWith(q) - a.norm.startsWith(q)) || b.flights - a.flights).slice(0, 30);
+  box.innerHTML = hits.length ? hits.map((s, i) => `<button type="button" data-i="${i}"><span>${esc(s.name)} <small>${s.alt || '?'} m · ${s.wind ? sectorText(s.wind) : '?'}</small></span><small>${s.lat.toFixed(2)}, ${s.lon.toFixed(2)}${s.flights ? ` · ${s.flights} flights/yr` : ''}</small></button>`).join('') : '<p class="note" style="padding:8px 10px;margin:0">No launch matches that name.</p>';
+  box._hits = hits;
+  box.hidden = false;
+}
+
+function addSite(s) {
+  if (state.sites.some(x => x.key === s.key)) return;
+  const {norm, flights, ...site} = refreshSite(s, state.allSites || [s]);
+  state.sites.push(site);
+  store.set('sites', state.sites);
+  loadSite(site);
+}
+
+// ---------- location search ----------
+const COORDS = /^\s*(-?\d+(?:\.\d+)?)\s*[,;\s]\s*(-?\d+(?:\.\d+)?)\s*$/;
+let placeAbort;
+
+async function searchPlaces(q) {
+  const box = $('#places');
+  q = q.trim();
+  if (q.length < 2) { box.hidden = true; return; }
+  const m = COORDS.exec(q);
+  let places;
+  if (m && Math.abs(+m[1]) <= 90 && Math.abs(+m[2]) <= 180) {
+    places = [{name: `${(+m[1]).toFixed(4)}, ${(+m[2]).toFixed(4)}`, latitude: +m[1], longitude: +m[2], where: 'Coordinates'}];
+  } else {
+    if (placeAbort) placeAbort.abort();
+    placeAbort = new AbortController();
+    try {
+      const j = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=8&language=en&format=json&name=' + encodeURIComponent(q), {signal: placeAbort.signal})).json();
+      places = (j.results || []).map(r => ({...r, where: [r.admin1, r.country].filter(Boolean).join(', ')}));
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      $('#add-note').textContent = `Couldn't look up places (${e.message}). Try coordinates instead, for example 42.69, 24.75.`;
+      return;
+    }
+  }
+  box.innerHTML = places.length ? places.map((p, i) => `<button type="button" data-i="${i}"><span>${esc(p.name)}</span><small>${esc(p.where)}</small></button>`).join('')
+    : '<p class="note" style="padding:8px 10px;margin:0">No place matches that name. Try a nearby town or coordinates.</p>';
+  box._places = places;
+  box.hidden = false;
+}
+
+async function showNearby(place) {
+  state.nearby = place;
+  const el = $('#nearby');
+  el.hidden = false;
+  el.innerHTML = '<p class="note">Loading the site database…</p>';
+  let all;
+  try { all = await ensureAllSites(); } catch (e) { el.innerHTML = `<p class="err">Couldn't load the site database (${esc(e.message)}). Check your connection, then try again.</p>`; return; }
+  renderNearby(all);
+}
+
+function renderNearby(all = state.allSites) {
+  const place = state.nearby, el = $('#nearby');
+  if (!place || !all) return;
+  const radius = +$('#radius').value;
+  const here = {lat: place.latitude, lon: place.longitude};
+  const hits = all.filter(s => !s.closed).map(s => ({s, d: metersBetween(here, s) / 1000})).filter(x => x.d <= radius).sort((a, b) => a.d - b.d);
+  const saved = new Set(state.sites.map(s => s.key));
+  const top = hits.slice().sort((a, b) => b.s.flights - a.s.flights).filter(x => !saved.has(x.s.key)).slice(0, 5);
+  el._hits = hits;
+  el._top = top;
+  el.innerHTML = `<div class="nearby-head"><h2>${hits.length} launch${hits.length === 1 ? '' : 'es'} within ${radius} km of ${esc(place.name)}</h2>
+      <div style="display:flex;gap:8px">${top.length ? `<button class="btn primary" type="button" data-top>Add the ${top.length} most flown</button>` : ''}<button class="btn" type="button" data-close>Close</button></div></div>
+    ${hits.length ? `<div class="nearby-list">${hits.map((x, i) => `<div class="near"><b>${esc(x.s.name)}</b>
+      <small>${x.d.toFixed(1)} km · ${x.s.alt || '?'} m · ${x.s.wind ? sectorText(x.s.wind) : 'orientation ?'}${x.s.flights ? ` · ${x.s.flights} flights/yr` : ''}</small>
+      <button class="btn" type="button" data-add="${i}" ${saved.has(x.s.key) ? 'disabled' : ''}>${saved.has(x.s.key) ? 'Added' : 'Add'}</button></div>`).join('')}</div>`
+      : `<p class="note">No open launches in the database within ${radius} km. Try a larger radius.</p>`}`;
+}
+
+// ---------- events ----------
+$('#profile').addEventListener('click', e => {
+  const p = e.target.closest('[data-p]');
+  if (!p) return;
+  state.profile = p.dataset.p;
+  store.set('profile', state.profile);
+  renderProfile(); renderBoard(); if (state.sel.site) select(state.sel.site, state.sel.date, null, state.sel.model);
+});
+$('#board').addEventListener('click', e => {
+  const rm = e.target.closest('[data-remove]');
+  if (rm) {
+    state.sites = state.sites.filter(s => s.key !== rm.dataset.remove);
+    delete state.data[rm.dataset.remove];
+    store.set('sites', state.sites);
+    if (state.sel.site === rm.dataset.remove) state.sel = {site: null};
+    renderBoard(); autoSelect(); if (!state.sel.site) renderDetail();
+    return;
+  }
+  const c = e.target.closest('.cell[data-site]');
+  if (c) { select(c.dataset.site, c.dataset.date); $('#detail').scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start'}); }
+});
+$('#spots').addEventListener('click', e => {
+  const b = e.target.closest('.spot');
+  if (b) { select(b.dataset.site, b.dataset.date); $('#detail').scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start'}); }
+});
+$('#detail').addEventListener('click', e => {
+  const r = e.target.closest('tr[data-hour]');
+  if (r) return select(state.sel.site, state.sel.date, r.dataset.hour, state.sel.model);
+  const m = e.target.closest('[data-model]');
+  if (m) select(state.sel.site, state.sel.date, state.sel.hour, m.dataset.model);
+});
+let searchTimer;
+$('#site-search').addEventListener('input', e => { clearTimeout(searchTimer); searchTimer = setTimeout(() => search(e.target.value), 180); });
+$('#site-search').addEventListener('focus', () => { ensureAllSites().catch(() => {}); });
+$('#results').addEventListener('click', e => {
+  const b = e.target.closest('[data-i]');
+  if (!b) return;
+  addSite($('#results')._hits[+b.dataset.i]);
+  $('#results').hidden = true; $('#site-search').value = '';
+});
+document.addEventListener('click', e => { if (!e.target.closest('.search')) $('#results').hidden = $('#places').hidden = true; });
+let placeTimer;
+$('#place-search').addEventListener('input', e => { clearTimeout(placeTimer); placeTimer = setTimeout(() => searchPlaces(e.target.value), 300); });
+$('#place-search').addEventListener('focus', () => { ensureAllSites().catch(() => {}); });
+$('#place-search').addEventListener('keydown', e => { if (e.key === 'Enter') { const p = $('#places')._places; if (p && p.length && !$('#places').hidden) { $('#places').hidden = true; showNearby(p[0]); } } });
+$('#places').addEventListener('click', e => {
+  const b = e.target.closest('[data-i]');
+  if (!b) return;
+  $('#places').hidden = true;
+  showNearby($('#places')._places[+b.dataset.i]);
+});
+$('#radius').addEventListener('change', () => renderNearby());
+$('#nearby').addEventListener('click', e => {
+  const el = $('#nearby');
+  if (e.target.closest('[data-close]')) { el.hidden = true; state.nearby = null; return; }
+  if (e.target.closest('[data-top]')) { el._top.forEach(x => addSite(x.s)); renderNearby(); return; }
+  const b = e.target.closest('[data-add]');
+  if (b) { addSite(el._hits[+b.dataset.add].s); renderNearby(); }
+});
+$('#copy-sites').addEventListener('click', async () => {
+  const text = JSON.stringify(state.sites, null, 2);
+  try { await navigator.clipboard.writeText(text); $('#add-note').textContent = `Copied ${state.sites.length} sites. Paste them into favorites.json, then run snapshot.py.`; }
+  catch (e) { $('#add-note').textContent = 'Your browser blocked clipboard access. Copy the list from the browser console instead.'; console.log(text); }
+});
+$('#refresh').addEventListener('click', () => { loadAll(); });
+$('#open-settings').addEventListener('click', () => {
+  $('#model-checks').innerHTML = OM_MODELS.map(m => `<label><input type="checkbox" id="om-${m.id}" value="${m.id}" ${state.omOn.includes(m.id) ? 'checked' : ''}> ${m.label}</label>`).join('');
+  $('#windy-key').value = state.keys.windy || ''; $('#mb-key').value = state.keys.mb || '';
+  $('#windy-key').disabled = $('#mb-key').disabled = !!SNAP;
+  $('#settings').showModal();
+});
+$('#settings').addEventListener('close', () => {
+  if ($('#settings').returnValue !== 'save') return;
+  state.omOn = [...document.querySelectorAll('#model-checks input:checked')].map(i => i.value);
+  store.set('omOn', state.omOn);
+  if (!SNAP) {
+    const keys = {windy: $('#windy-key').value.trim(), mb: $('#mb-key').value.trim()};
+    const changed = keys.windy !== state.keys.windy || keys.mb !== state.keys.mb;
+    state.keys = keys; store.set('keys', keys);
+    if (changed) { loadAll(); return; }
+  }
+  renderBoard(); if (state.sel.site) select(state.sel.site, state.sel.date, state.sel.hour, state.sel.model);
+});
+
+// ---------- boot ----------
+if (SNAP) {
+  $('#site-search').disabled = true;
+  $('#site-search').placeholder = 'Adding sites needs the local app';
+  $('#place-search').disabled = $('#radius').disabled = true;
+  $('#place-search').placeholder = 'Location search needs the local app';
+  $('#copy-sites').hidden = true;
+  $('#refresh').hidden = true;
+  $('#add-note').textContent = `This published snapshot covers ${SNAP.sites.length} sites. To change them, edit favorites.json and run snapshot.py.`;
+}
+renderProfile();
+renderLegend();
+renderBoard();
+renderDetail();
+loadAll().then(autoSelect);
+if (!SNAP) refreshSites();
+</script>
