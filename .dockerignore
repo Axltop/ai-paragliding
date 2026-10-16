@@ -1,0 +1,6 @@
+# Only the page, its fonts and the nginx config go into the build. Everything else
+# (notably .windy-key, the snapshot builder and git history) stays out of the image.
+*
+!index.html
+!fonts/
+!docker/

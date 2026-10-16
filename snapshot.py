@@ -26,6 +26,8 @@ LEVEL_VARS = ['temperature', 'dew_point', 'wind_speed', 'wind_direction', 'geopo
 LEVELS = [1000, 925, 850, 800, 700, 600, 500]
 KEEP_HOURS = range(7, 21)  # the page only shows 07:00-20:00 local
 SITES_API = 'https://pg.vrana.cz/xcontest/pgmapa.php?locale=en'
+LOCAL_FONTS = '<link rel="stylesheet" href="fonts/fonts.css">\n'
+GOOGLE_FONTS = '<link rel="preconnect" href="https://fonts.googleapis.com">\n<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">\n'
 NOTE_KEYS = ['limitations', 'air_traffic', 'rules']
 
 
@@ -159,6 +161,9 @@ def main():
             print(f'Windy warning: {warning}')
     payload = json.dumps(snap, separators=(',', ':')).replace('</', '<\\/')
     html = (ROOT / 'index.html').read_text()
+    # Published artifacts can only load fonts from Google Fonts, not files next to the page.
+    assert LOCAL_FONTS in html, 'local font link missing from index.html'
+    html = html.replace(LOCAL_FONTS, GOOGLE_FONTS)
     assert PLACEHOLDER in html, 'snapshot placeholder missing from index.html'
     out = ROOT / 'dist' / 'launch-window.html'
     out.parent.mkdir(exist_ok=True)

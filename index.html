@@ -1,8 +1,6 @@
 <meta charset="utf-8">
 <title>Launch Window</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="fonts/fonts.css">
 <style>
 /* Layout: a site × day score board (the summary) above a detail bench for one site-day: model comparison, hourly strip, sounding. */
 :root {
@@ -252,6 +250,7 @@ footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-wi
   <section class="detail" id="detail" aria-live="polite"></section>
 
   <footer>
+    <div>Your sites, settings and API keys stay in this browser. This site stores nothing about you, sets no cookies and keeps no request logs.</div>
     <div>Launch sites come from Paragliding Mapa (paragliding-mapa.cz, DHV, Paragliding Earth and XContest), the same source as the Windy plugin <a href="https://github.com/vrana/windy-plugin-pg-mapa" target="_blank" rel="noopener">pg-mapa</a>. Forecasts come from Open-Meteo, plus Windy and Meteoblue when you add API keys.</div>
     <div>The score only supports your own judgment. It can't see rotors, local convergence or what the windsock is doing. Always check the site rules and the conditions on the hill yourself.</div>
   </footer>
@@ -273,6 +272,11 @@ footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-wi
       <label class="label" for="mb-key">Meteoblue API key</label>
       <input id="mb-key" type="password" autocomplete="off" placeholder="Adds the Meteoblue multimodel forecast">
       <span class="note">Get one at meteoblue.com/en/weather-api. Keys stay in this browser only.</span>
+    </div>
+    <div class="field">
+      <span class="label">Your data</span>
+      <span class="note">Your sites, pilot profile, model choices and API keys are stored only in this browser (local storage). The server that hosts this page stores nothing about you. Forecast and site lookups go straight from your browser to Open-Meteo, Paragliding Mapa, Windy and Meteoblue.</span>
+      <div><button class="btn" type="button" id="clear-data" data-tip-title="Clear my data" data-tip="Erase your sites, settings and API keys from this browser and start over with the default sites.">Clear my data in this browser</button></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:end">
       <button class="btn" value="cancel" type="submit">Cancel</button>
@@ -480,7 +484,8 @@ async function loadSite(site) {
   state.data[site.key] = rec;
   state.loading.delete(site.key);
   renderBoard();
-  if (state.sel.site === site.key || !state.sel.site) autoSelect();
+  // Pick the top spot only once every site has loaded (loadAll does that); before then just refresh the open one.
+  if (state.sel.site === site.key) autoSelect();
 }
 
 async function fetchJsonRetry(url) {
@@ -1127,7 +1132,7 @@ function addSite(s) {
   const {norm, flights, ...site} = refreshSite(s, state.allSites || [s]);
   state.sites.push(site);
   store.set('sites', state.sites);
-  loadSite(site);
+  loadSite(site).then(() => { if (!state.sel.site) autoSelect(); });
 }
 
 // ---------- location search ----------
@@ -1253,6 +1258,14 @@ $('#copy-sites').addEventListener('click', async () => {
   catch (e) { $('#add-note').textContent = 'Your browser blocked clipboard access. Copy the list from the browser console instead.'; console.log(text); }
 });
 $('#refresh').addEventListener('click', () => { loadAll(); });
+$('#clear-data').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!b.dataset.armed) { b.dataset.armed = '1'; b.textContent = 'Click again to erase everything'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Clear my data in this browser'; }, 5000); return; }
+  for (const st of [localStorage, sessionStorage]) {
+    try { Object.keys(st).filter(k => k.startsWith('lw.')).forEach(k => st.removeItem(k)); } catch (err) { /* storage unavailable */ }
+  }
+  location.reload();
+});
 $('#open-settings').addEventListener('click', () => {
   $('#model-checks').innerHTML = OM_MODELS.map(m => `<label><input type="checkbox" id="om-${m.id}" value="${m.id}" ${state.omOn.includes(m.id) ? 'checked' : ''}> ${m.label}</label>`).join('');
   $('#windy-key').value = state.keys.windy || ''; $('#mb-key').value = state.keys.mb || '';

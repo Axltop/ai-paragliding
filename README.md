@@ -30,3 +30,25 @@ The detail panel also shows the site's limitations, airspace and rules notes, pl
 Under the sounding, each factor is drawn as bars of its measured values in their own units (m/s, °, m, %, mm/h, J/kg). A red line marks the threshold: a maximum such as your wind or gust limit, or a minimum such as cloud base 150 m above the launch. Bars are green within limits, amber near the threshold and red past it.
 
 Hover over any element (or focus it with the keyboard) to see a popup explaining what it shows: board tiles list each model's score, the flyable window, model agreement and the main limiting factor; bars explain their measurement and threshold; the sounding has a reading guide.
+
+## Deploy with Docker
+
+The app is a single static page, served by an unprivileged nginx container. There is no backend, database or cookie.
+
+```bash
+docker compose up -d --build
+```
+
+It listens on port 8080. Set `PORT=9000 docker compose up -d` to use another host port. Put it behind your own reverse proxy (Caddy, Traefik, nginx) for HTTPS.
+
+### Privacy
+
+- Everything a visitor sets up stays in their own browser's local storage: sites, pilot profile, model choices, and Windy and Meteoblue API keys. **Sources & keys → Clear my data in this browser** erases it.
+- The browser calls the data providers directly (Open-Meteo for forecasts and place search, Paragliding Mapa for launches, Windy and Meteoblue only when the visitor adds a key). Nothing passes through or is stored on your server.
+- nginx keeps no access log, logs only critical errors (normal error lines contain client IPs), sets no cookies and refuses anything but GET and HEAD.
+- Fonts are bundled in the image, so visitors make no requests to Google.
+- Response headers restrict the page to those API hosts (`Content-Security-Policy`), send no referrer, and block framing.
+- The container runs as a non-root user with a read-only filesystem, all capabilities dropped and `no-new-privileges`.
+- Only `index.html`, `fonts/` and the nginx config are copied into the image (see `.dockerignore`). `.windy-key`, `snapshot.py` and the git history stay out.
+
+Your reverse proxy may keep its own access logs. Turn them off there too if visitor IPs must not be recorded anywhere.
