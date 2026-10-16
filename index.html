@@ -773,6 +773,10 @@ function siteTip(site) {
     + `Coordinates ${site.lat.toFixed(4)}, ${site.lon.toFixed(4)}.` + (site.closed ? '\nListed as closed or forbidden in Paragliding Mapa.' : '');
 }
 
+function googleMapsUrl(site) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${site.lat},${site.lon}`)}`;
+}
+
 function hourTip(x, s, P) {
   return (s ? `Hour score ${s.score} of 100 (${band(s.score)[2]}).\n` : '')
     + `Wind ${x.ws.toFixed(1)} m/s from ${compass(x.wd)} ${Math.round(x.wd)}°. The arrow points downwind.\n`
@@ -855,7 +859,7 @@ function renderBoard() {
         <span class="n">${c.score}</span>${windsock(c.wind)}<span class="w">${c.window || b[2]}</span>
         <span class="agree" aria-label="model agreement">${[1, 2, 3].map(i => `<i class="${i <= c.agree ? 'on' : ''}"></i>`).join('')}</span></button></td>`;
     }).join('');
-    return `<tr><th class="site"><div class="site-name"><span${tip(site.name, siteTip(site))}>${esc(site.name)}</span>${SNAP ? '' : `<button class="x" type="button" data-remove="${esc(site.key)}" aria-label="Remove ${esc(site.name)}"${tip('Remove', `Remove ${site.name} from your list.`)}>×</button>`}</div>
+    return `<tr><th class="site"><div class="site-name"><a href="${googleMapsUrl(site)}" target="_blank" rel="noopener" aria-label="Open ${esc(site.name)} in Google Maps"${tip(site.name, siteTip(site))}>${esc(site.name)}</a>${SNAP ? '' : `<button class="x" type="button" data-remove="${esc(site.key)}" aria-label="Remove ${esc(site.name)}"${tip('Remove', `Remove ${site.name} from your list.`)}>×</button>`}</div>
       <div class="site-meta mono"><span>${site.alt || '?'} m</span><span>${site.wind && site.wind.length ? sectorText(site.wind) : 'orientation ?'}</span>${site.closed ? '<span class="err">closed</span>' : ''}</div></th>${cells || '<td></td>'}</tr>`;
   }).join('');
   renderSpots();
@@ -991,7 +995,7 @@ function renderDetail() {
       <div style="display:flex;gap:14px;align-items:center">
         ${rose(site, h && h.wd, h && h.ws)}
         <div style="display:grid;gap:4px">
-          <h2>${esc(site.name)} · ${dt.toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'long'})}</h2>
+          <h2><a href="${googleMapsUrl(site)}" target="_blank" rel="noopener">${esc(site.name)}</a> · ${dt.toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'long'})}</h2>
           <div class="facts mono"><span${tip('Launch altitude', 'Height of the launch above sea level, from Paragliding Mapa. Cloud base, thermal top and wind aloft are measured from here.')}>Launch ${site.alt || '?'} m</span>${site.sup ? `<span${tip('Height', 'Height of the launch above the landing field.')}>Height ${site.sup} m</span>` : ''}<span${tip('Model ground', 'Terrain height in the forecast at this point. The 2 m temperature and the sounding start here. In steep terrain it can differ from the launch altitude.')}>Model ground ${Math.round(rec.elev)} m</span><span${tip('Sectors', 'Wind directions this launch works in, from Paragliding Mapa.' + (site.opt ? ` The optimal sector is ${sectorText(site.opt)}.` : ''))}>Sectors ${site.wind && site.wind.length ? sectorText(site.wind) : 'unknown'}</span></div>
           <div class="facts"><a href="${windyUrl}" target="_blank" rel="noopener"${tip('Windy', 'Open this launch on Windy.com to compare models, soundings and the wind map.')}>Windy</a><a href="${mbUrl}" target="_blank" rel="noopener"${tip('Meteoblue', 'Open the Meteoblue week forecast for this launch, including its multimodel and sounding views.')}>Meteoblue</a>${site.url ? `<a href="${esc(site.url)}" target="_blank" rel="noopener"${tip('Site info', 'The launch page in its source database: access, rules and landing fields.')}>Site info</a>` : ''}${site.webcam ? `<a href="${esc(site.webcam)}" target="_blank" rel="noopener"${tip('Webcam', 'Live webcam near the launch, as listed in Paragliding Mapa.')}>Webcam</a>` : ''}</div>
         </div>
