@@ -9,6 +9,11 @@ Scores paragliding launches for each of the next 7 days. Each score compares the
 
 ## Scoring
 
+There are two scores, picked with the **Thermal / Soaring** switch next to the pilot profile. The board, best spots, hourly table and factor bars follow the switch; the location details always show both day scores as bars with the flyable threshold (60).
+
+- **Thermal** (10:00 to 18:00): favours light wind and a high thermal top. The thermal top above the launch scores full marks from 1,200 m, with 800 m as the threshold; thick cloud and night hours weaken it. Light wind from any direction is fine.
+- **Soaring** (09:00 to 19:00): ridge lift. The wind at the launch must sit between the soaring minimum (3 m/s) and your profile limit, shown as a bar with two red lines. It must blow straight up the slope (cross wind scores 0.35, light wind gets no allowance), and the cloud base needs to be at least 300 m above the launch. Thermals are not scored.
+
 Each hour gets a score from 0 to 100. It's the product of these factors:
 
 - wind speed at the launch
@@ -18,7 +23,7 @@ Each hour gets a score from 0 to 100. It's the product of these factors:
 - wind 1,000 m above the launch
 - rain amount and probability
 - cloud base against launch altitude
-- thermal top from a dry-adiabat parcel lifted from the 2 m temperature
+- thermal top from a dry-adiabat parcel lifted from the 2 m temperature (thermal score only)
 - CAPE (storm risk)
 
 The **Best spots** list ranks site-days scoring 40 or more. On a tie, the calmer gusts rank first. Each board tile has a small windsock for the average wind at the launch in that day's best window, across models. It points downwind like a real sock; each filled stripe is about 1.5 m/s and all four fill from 6 m/s. The speed in m/s is next to it. Best spots show the strongest gust in the best window across all models, amber near your limit and red over it.

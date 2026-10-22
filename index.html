@@ -177,6 +177,9 @@ svg.snd .lbl { fill: var(--ink); }
 .factors { display: grid; gap: 6px; }
 .factor { display: grid; grid-template-columns: 9.5em minmax(0, 1fr) 5.2em; gap: 2px 10px; align-items: center; font-size: .8rem; }
 .factor .fl { line-height: 1.2; }
+.factor.dim { opacity: .6; }
+.factors.flying { max-width: 640px; }
+.factors.flying h3 { margin-bottom: 4px; }
 .factor .track { position: relative; height: 10px; border-radius: 3px; background: var(--line); margin-bottom: 12px; }
 .factor .track i { display: block; height: 100%; border-radius: 3px; }
 .factor .lim { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; background: var(--dot0); }
@@ -211,9 +214,10 @@ footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-wi
   <header>
     <div class="brand">
       <h1>Launch Window</h1>
-      <p>Paragliding site scores from ECMWF, ICON and GFS forecasts. Each score combines wind on the launch, gusts, wind aloft, rain, cloud base, thermals and storm risk.</p>
+      <p>Paragliding site scores from ECMWF, ICON and GFS forecasts, for thermal flying or ridge soaring. Each score combines wind on the launch, gusts, wind aloft, rain, cloud base, thermals and storm risk.</p>
     </div>
     <div class="controls">
+      <div class="seg" role="group" aria-label="Type of flying" id="mode"></div>
       <div class="seg" role="group" aria-label="Pilot profile" id="profile"></div>
       <button class="btn" id="open-settings" type="button" data-tip-title="Sources & keys" data-tip="Choose which forecast models count toward the scores, and add Windy or Meteoblue API keys.">Sources &amp; keys</button>
       <button class="btn" id="refresh" type="button" data-tip-title="Refresh" data-tip="Download fresh forecasts for every site. The models publish new runs every 1 to 6 hours.">Refresh</button>
@@ -309,11 +313,17 @@ const OM_SURFACE = ['temperature_2m', 'dew_point_2m', 'wind_speed_10m', 'wind_di
 const OM_LEVEL_VARS = ['temperature', 'dew_point', 'wind_speed', 'wind_direction', 'geopotential_height'];
 const LEVELS = [1000, 925, 850, 800, 700, 600, 500];
 const WINDY_MODELS = [{id: 'gfs', label: 'Windy GFS'}, {id: 'iconEu', label: 'Windy ICON-EU'}];
-const WINDOW = [10, 17]; // local hours considered for the day score (inclusive start hours)
+// Two kinds of flying, each scored separately. window: local start hours counted toward the day score (inclusive).
+const MODES = {
+  thermal: {label: 'Thermal', window: [10, 17], help: 'Thermal flying: climbing in rising warm air. Scores favour light wind and a high thermal top; the safety limits still apply.'},
+  soaring: {label: 'Soaring', window: [9, 18], help: 'Ridge soaring: staying up in wind deflected up the slope. Needs a steady wind straight onto the launch, between the soaring minimum and your limit, with smooth air.'},
+};
+const win = (mode = state.mode) => MODES[mode].window;
+const THERMAL_MIN_AGL = 800; // thermal top above launch where thermal flying gets worthwhile (m)
 const PROFILES = {
-  novice: {label: 'Novice', wind: 4, gust: 6, spread: 3, upper: 7},
-  pilot: {label: 'Intermediate', wind: 6, gust: 8.5, spread: 4.5, upper: 10},
-  expert: {label: 'Expert', wind: 8, gust: 11, spread: 6, upper: 13},
+  novice: {label: 'Novice', wind: 4, gust: 6, spread: 3, upper: 7, soarMin: 3},
+  pilot: {label: 'Intermediate', wind: 6, gust: 8.5, spread: 4.5, upper: 10, soarMin: 3},
+  expert: {label: 'Expert', wind: 8, gust: 11, spread: 6, upper: 13, soarMin: 3},
 };
 const BANDS = [[75, 4, 'Good'], [60, 3, 'Flyable'], [40, 2, 'Marginal'], [20, 1, 'Poor'], [-1, 0, 'No-go']];
 
@@ -327,6 +337,7 @@ const store = {
 
 const state = {
   profile: store.get('profile', 'pilot'),
+  mode: MODES[store.get('mode', 'thermal')] ? store.get('mode', 'thermal') : 'thermal',
   sites: SNAP ? SNAP.sites : store.get('sites', DEFAULT_SITES),
   omOn: store.get('omOn', OM_MODELS.map(m => m.id)),
   keys: SNAP ? {} : store.get('keys', {windy: '', mb: ''}),
@@ -557,37 +568,49 @@ const fmtVal = (v, unit) => unit === 'm/s' || unit === 'mm/h' ? v.toFixed(1) : M
 
 /** One bar per measured value, in its unit, with the threshold as a red line. */
 function measureBar(m, last, detail) {
-  const max = m.scale || Math.max(m.kind === 'min' ? m.limit * 3 : m.limit * 1.6, m.value * 1.1);
+  // kind 'range': limit is [low, high] and the value should sit between the two red lines.
+  const range = m.kind === 'range';
+  const [lo, hi] = range ? m.limit : [m.limit, m.limit];
+  const max = m.scale || Math.max(m.kind === 'min' ? lo * 3 : hi * 1.6, m.value * 1.1);
   const pct = v => clamp(v / max * 100, 0, 100);
-  const over = m.kind === 'max' ? m.value > m.limit : m.value < m.limit;
-  const near = !over && (m.kind === 'max' ? m.value > m.limit * 0.75 : m.value < m.limit * 1.5);
+  const over = range ? m.value < lo || m.value > hi : m.kind === 'max' ? m.value > hi : m.value < lo;
+  const near = !over && (range ? m.value < lo * 1.15 || m.value > hi * 0.85 : m.kind === 'max' ? m.value > hi * 0.75 : m.value < lo * 1.5);
   const tone = over ? 0 : near ? 1 : 4;
-  const limTxt = `${m.kind === 'max' ? 'max' : 'min'} ${m.limit}`;
-  return `<div class="factor"${tip(m.label, `${MEAS_HELP[m.label] || ''}\nNow ${fmtVal(m.value, m.unit)} ${m.unit}. Red line: ${m.kind === 'max' ? 'maximum' : 'minimum'} ${m.limit} ${m.unit}.`)}>
+  const lines = range ? [[lo, `min ${lo}`], [hi, `max ${hi}`]] : [[lo, `${m.kind === 'max' ? 'max' : 'min'} ${lo}`]];
+  const limWords = range ? `between ${lo} and ${hi}` : `${m.kind === 'max' ? 'maximum' : 'minimum'} ${lo}`;
+  return `<div class="factor${m.active === false ? ' dim' : ''}"${tip(m.label, `${MEAS_HELP[m.label] || ''}\nNow ${fmtVal(m.value, m.unit)} ${m.unit}. Red line${range ? 's' : ''}: ${limWords} ${m.unit}.`)}>
     <span class="fl">${esc(m.label)}</span>
-    <span class="track"><i style="width:${Math.max(1.5, pct(m.value))}%;background:var(--dot${tone})"></i><b class="lim" style="left:${pct(m.limit)}%"></b><em class="limtxt" style="left:${pct(m.limit)}%">${limTxt}</em></span>
+    <span class="track"><i style="width:${Math.max(1.5, pct(m.value))}%;background:var(--dot${tone})"></i>${lines.map(([v, t]) => `<b class="lim" style="left:${pct(v)}%"></b><em class="limtxt" style="left:${pct(v)}%">${t}</em>`).join('')}</span>
     <span class="mono val${over ? ' bad' : ''}">${fmtVal(m.value, m.unit)} <small>${m.unit}</small></span>
     ${last ? `<span class="d">${esc(detail)}</span>` : ''}</div>`;
 }
 
-function scoreHour(site, h, elev, P) {
+function scoreHour(site, h, elev, P, mode = state.mode) {
   if (h.ws == null || h.wd == null) return null;
   const f = [];
   // meas: the measured values behind a factor, each drawn as a bar in its own unit with the threshold marked.
   const add = (key, label, v, detail, meas = []) => f.push({key, label, v: clamp(v, 0, 1), detail, meas: meas.filter(m => m.value != null)});
   const ws = h.ws;
 
-  add('wind', 'Wind speed',
-    ws <= P.wind * 0.7 ? 1 : ws <= P.wind ? 1 - 0.6 * (ws - P.wind * 0.7) / (P.wind * 0.3) : 0.4 - (ws - P.wind) * 0.2,
-    `${ws.toFixed(1)} m/s at the launch; your limit is ${P.wind} m/s`, [measure('Wind speed', ws, 'm/s', P.wind)]);
+  const soaring = mode === 'soaring';
+  if (soaring) {
+    // Ridge lift needs wind: below the soaring minimum lift fades fast; above your limit it gets dangerous.
+    const v = ws < P.soarMin ? (ws / P.soarMin) ** 2 : ws <= P.wind * 0.85 ? 1 : ws <= P.wind ? 1 - 0.3 * (ws - P.wind * 0.85) / (P.wind * 0.15) : 0.4 - (ws - P.wind) * 0.2;
+    add('wind', 'Wind speed', v, `${ws.toFixed(1)} m/s at the launch; soaring needs ${P.soarMin} to ${P.wind} m/s`
+      + (ws < P.soarMin ? ', too light to stay up' : ''), [measure('Wind speed', ws, 'm/s', [P.soarMin, P.wind], 'range')]);
+  } else {
+    add('wind', 'Wind speed',
+      ws <= P.wind * 0.7 ? 1 : ws <= P.wind ? 1 - 0.6 * (ws - P.wind * 0.7) / (P.wind * 0.3) : 0.4 - (ws - P.wind) * 0.2,
+      `${ws.toFixed(1)} m/s at the launch; your limit is ${P.wind} m/s`, [measure('Wind speed', ws, 'm/s', P.wind)]);
+  }
 
   const dirTxt = `${compass(h.wd)} ${Math.round(h.wd)}°`;
   const dm = site.wind && site.wind.length ? [measure('Off the sector', sectorOffset(h.wd, site.wind), '°', 22.5, 'max', 180)] : [];
-  if (!site.wind || !site.wind.length) add('dir', 'Direction', 0.75, `${dirTxt}. This launch has no orientation on record`);
-  else if (ws < 1.5) add('dir', 'Direction', 0.9, `${dirTxt}, light and variable`, dm);
+  if (!site.wind || !site.wind.length) add('dir', 'Direction', soaring ? 0.6 : 0.75, `${dirTxt}. This launch has no orientation on record`);
+  else if (ws < 1.5 && !soaring) add('dir', 'Direction', 0.9, `${dirTxt}, light and variable`, dm);
   else if (site.opt && site.opt.some(([a, b]) => isDirIn(h.wd, a, b))) add('dir', 'Direction', 1, `${dirTxt}, in the optimal sector (${sectorText(site.opt)})`, dm);
   else if (site.wind.some(([a, b]) => isDirIn(h.wd, a, b))) add('dir', 'Direction', site.opt ? 0.85 : 1, `${dirTxt}, onto the launch (${sectorText(site.wind)})` + (site.opt ? `, outside the optimal ${sectorText(site.opt)}` : ''), dm);
-  else if (site.wind.some(([a, b]) => isDirIn(h.wd, a, b, 22.5))) add('dir', 'Direction', 0.6, `${dirTxt}, cross to the launch (${sectorText(site.wind)})`, dm);
+  else if (site.wind.some(([a, b]) => isDirIn(h.wd, a, b, 22.5))) add('dir', 'Direction', soaring ? 0.35 : 0.6, `${dirTxt}, cross to the launch (${sectorText(site.wind)})` + (soaring ? ', so ridge lift is weak and uneven' : ''), dm);
   else add('dir', 'Direction', 0.05, `${dirTxt}, off the launch. It needs ${sectorText(site.wind)}`, dm);
 
   // Lee side: a calm model wind at the launch can sit under flow coming over the back of the ridge (rotor).
@@ -619,19 +642,23 @@ function scoreHour(site, h, elev, P) {
     `${pr.toFixed(1)} mm/h` + (pp != null ? `, ${pp}% chance` : ''), [measure('Rain', pr, 'mm/h', 0.2, 'max', 2), measure('Rain chance', pp, '%', 40, 'max', 100)]);
 
   const th = thermals(h, elev);
-  const cm = [measure('Cloud base above launch', th && th.cb != null ? th.cb - site.alt : null, 'm', 150, 'min'), measure('Low cloud', h.cl, '%', 85, 'max', 100)];
+  const cbMin = soaring ? 300 : 150; // soaring needs room to climb above the ridge
+  const cm = [measure('Cloud base above launch', th && th.cb != null ? th.cb - site.alt : null, 'm', cbMin, 'min'), measure('Low cloud', h.cl, '%', 85, 'max', 100)];
   if (th && th.cb != null && th.cb < site.alt + 150) add('cloud', 'Cloud base', 0.15, `cloud base about ${Math.round(th.cb)} m, so the launch is probably in cloud`, cm);
+  else if (soaring && th && th.cb != null && th.cb < site.alt + cbMin) add('cloud', 'Cloud base', 0.5, `cloud base about ${Math.round(th.cb)} m, little room to soar above the ridge`, cm);
   else if (h.cl != null && h.cl >= 85) add('cloud', 'Cloud base', 0.6, `${h.cl}% low cloud`, cm);
   else add('cloud', 'Cloud base', 1, th && th.cb != null ? `cloud base about ${Math.round(th.cb)} m` + (h.cl != null ? `, ${h.cl}% low cloud` : '') : 'no cloud data', cm);
 
-  if (th) {
+  // Thermals only count for thermal flying; on a ridge the wind does the lifting.
+  if (th && !soaring) {
     const agl = th.top - site.alt;
-    let v = agl < 150 ? 0.75 : agl < 600 ? 0.9 : 1;
+    let v = agl <= 200 ? 0.35 : agl >= 1200 ? 1 : 0.35 + 0.65 * (agl - 200) / 1000;
     const shaded = (h.cm != null && h.cm >= 90) || (h.cc != null && h.cc >= 95);
-    if (shaded) v *= 0.85;
+    if (shaded) v *= 0.8;
+    if (h.day === 0) v = Math.min(v, 0.3);
     add('thermal', 'Thermals', v, agl < 150 ? 'little lift expected, sled-ride conditions' + (shaded ? ', overcast' : '')
       : `usable to about ${Math.round(th.top)} m (${Math.round(agl)} m above the launch)` + (th.cu ? ', with cumulus' : ', blue') + (shaded ? ', shaded by cloud' : ''),
-      [measure('Thermal top above launch', Math.max(0, agl), 'm', 600, 'min')]);
+      [measure('Thermal top above launch', Math.max(0, agl), 'm', THERMAL_MIN_AGL, 'min')]);
   }
 
   if (h.cape != null) {
@@ -663,17 +690,17 @@ function windsock(w) {
   return `<span class="sock"><svg viewBox="-9 -9 18 18" aria-hidden="true"><g transform="rotate(${Math.round(w.wd)})">${segs}</g><circle class="sk-mast" r="1.3"/></svg><span>${w.ws.toFixed(1)}</span></span>`;
 }
 
-function windowKeys(model, date) {
+function windowKeys(model, date, mode = state.mode) {
   const keys = [];
-  for (let hr = WINDOW[0]; hr <= WINDOW[1]; hr++) { const k = `${date}T${pad(hr)}`; if (model.hours[k]) keys.push(k); }
+  for (let hr = win(mode)[0]; hr <= win(mode)[1]; hr++) { const k = `${date}T${pad(hr)}`; if (model.hours[k]) keys.push(k); }
   return keys;
 }
 
 /** Day score for one model: best 3-hour stretch inside the flying window. */
-function scoreDay(site, rec, model, date, P) {
-  const keys = windowKeys(model, date);
+function scoreDay(site, rec, model, date, P, mode = state.mode) {
+  const keys = windowKeys(model, date, mode);
   if (!keys.length) return null;
-  const hrs = keys.map(k => ({k, r: scoreHour(site, model.hours[k], rec.elev, P)})).filter(x => x.r);
+  const hrs = keys.map(k => ({k, r: scoreHour(site, model.hours[k], rec.elev, P, mode)})).filter(x => x.r);
   if (!hrs.length) return null;
   const n = Math.min(3, hrs.length);
   let best = -1, at = 0;
@@ -688,11 +715,11 @@ function scoreDay(site, rec, model, date, P) {
     gust: gusts.length ? Math.max(...gusts) : null, wind: meanWind(hrs.slice(at, at + n).map(x => model.hours[x.k]))};
 }
 
-function consensus(site, date) {
+function consensus(site, date, mode = state.mode) {
   const rec = state.data[site.key];
   if (!rec) return null;
   const P = PROFILES[state.profile];
-  const per = activeModels(rec).filter(m => !m.test).map(m => ({m, d: scoreDay(site, rec, m, date, P)})).filter(x => x.d);
+  const per = activeModels(rec).filter(m => !m.test).map(m => ({m, d: scoreDay(site, rec, m, date, P, mode)})).filter(x => x.d);
   if (!per.length) return null;
   const scores = per.map(x => x.d.score);
   const score = Math.round(scores.reduce((a, b) => a + b, 0) / scores.length);
@@ -701,7 +728,7 @@ function consensus(site, date) {
   per.forEach(x => x.d.good.forEach(h => counts[h] = (counts[h] || 0) + 1));
   const hrs = Object.keys(counts).map(Number).filter(h => counts[h] * 2 >= per.length).sort((a, b) => a - b);
   const gusts = per.map(x => x.d.gust).filter(g => g != null);
-  return {score, spread, per, gust: gusts.length ? Math.max(...gusts) : null, wind: meanWind(per.map(x => x.d.wind)), window: hrs.length ? hourRanges(hrs).split(', ').sort((a, b) => (b.slice(3) - b.slice(0, 2)) - (a.slice(3) - a.slice(0, 2)))[0] : '', agree: spread < 15 ? 3 : spread < 30 ? 2 : 1};
+  return {mode, score, spread, per, gust: gusts.length ? Math.max(...gusts) : null, wind: meanWind(per.map(x => x.d.wind)), window: hrs.length ? hourRanges(hrs).split(', ').sort((a, b) => (b.slice(3) - b.slice(0, 2)) - (a.slice(3) - a.slice(0, 2)))[0] : '', agree: spread < 15 ? 3 : spread < 30 ? 2 : 1};
 }
 
 const OM_IDS = OM_MODELS.map(m => m.id);
@@ -739,7 +766,9 @@ const MODEL_HELP = {
 const modelInfo = m => (MODEL_HELP[m.id] || m.label) + (m.test ? ' This comes from a trial API key, which Windy shuffles on purpose, so it is shown but not scored.' : '');
 
 const MEAS_HELP = {
-  'Wind speed': 'Mean wind 10 m above the ground at the launch. Points start dropping at 70% of your profile limit.',
+  'Wind speed': 'Mean wind 10 m above the ground at the launch. Thermal flying: points start dropping at 70% of your profile limit. Soaring: the wind has to reach the soaring minimum to hold you up along the ridge, and stay under your limit.',
+  'Thermal score': 'How good the day is for thermal flying (0 to 100): light wind, a high thermal top, sun and the safety limits. The best 3 hours between 10:00 and 18:00, averaged across models. 60 or more is flyable.',
+  'Soaring score': 'How good the day is for ridge soaring (0 to 100): a steady wind straight up the slope between the soaring minimum and your limit, smooth air, and the safety limits. The best 3 hours between 09:00 and 19:00, averaged across models. 60 or more is flyable.',
   'Off the sector': 'How many degrees the wind is outside the launch\'s usable sectors. 0° means it blows up the slope. Up to 22.5° counts as cross wind. Beyond that the wind comes from the side or behind.',
   'Wind from behind': 'The strongest wind 300 to 1,000 m above the launch that blows from outside the launch sectors. Air flowing over the back of the ridge causes lee rotor, even when the launch itself feels calm.',
   'Gusts': 'Peak gust speed near the ground. Points start dropping at 75% of your gust limit.',
@@ -747,9 +776,9 @@ const MEAS_HELP = {
   'Wind aloft': 'Wind 1,000 m above the launch, interpolated between pressure levels. Strong wind up there drifts and breaks thermals and pushes you back over the ridge.',
   'Rain': 'Forecast rain per hour. Over 0.2 mm/h means a wet wing. 1 mm/h or more scores zero.',
   'Rain chance': 'Probability of rain, for models that provide it. Points start dropping at 40%.',
-  'Cloud base above launch': 'Estimated cumulus base minus launch altitude, from the gap between temperature and dew point (122 m per °C). Below 150 m the launch is probably in cloud.',
+  'Cloud base above launch': 'Estimated cumulus base minus launch altitude, from the gap between temperature and dew point (122 m per °C). Below 150 m the launch is probably in cloud. Soaring needs about 300 m to climb above the ridge.',
   'Low cloud': 'Share of the sky covered by low cloud. Above 85% the launch is probably overcast or in fog.',
-  'Thermal top above launch': 'How high thermals should reach above the launch: where rising surface air, cooling at the dry adiabatic rate, meets warmer air around it, capped at cloud base. Below 600 m expect weak, low thermals.',
+  'Thermal top above launch': 'How high thermals should reach above the launch: where rising surface air, cooling at the dry adiabatic rate, meets warmer air around it, capped at cloud base. Below 800 m thermal flying stays low and short; full marks from 1,200 m.',
   'CAPE': 'Energy available for convection, in J/kg. Above 1,000 J/kg towering cumulus and afternoon thunderstorms become likely, especially with rain in the forecast.',
 };
 
@@ -758,7 +787,7 @@ const SOUNDING_HELP = 'Altitude in metres on the left, temperature along the bot
 function cellTip(c) {
   const b = band(c.score);
   const worst = c.per.reduce((a, x) => (x.d.score < a.d.score ? x : a));
-  return `Score ${c.score} of 100: ${b[2]}.\n`
+  return `${MODES[c.mode].label} score ${c.score} of 100: ${b[2]}.\n`
     + `Models: ${c.per.map(x => `${x.m.label} ${x.d.score}`).join(', ')}. The score is their average.\n`
     + (c.window ? `Flyable window: ${c.window}h, the hours at least half the models score 60 or more.\n` : 'No hours where most models score 60 or more.\n')
     + `Agreement: the models are ${c.spread} points apart${c.agree === 3 ? ', so they agree' : c.agree === 2 ? ', so they partly agree' : ', so they disagree'}.\n`
@@ -828,7 +857,12 @@ addEventListener('scroll', hideTip, {capture: true, passive: true});
 // ---------- rendering ----------
 function renderProfile() {
   $('#profile').innerHTML = Object.entries(PROFILES).map(([k, p]) =>
-    `<button type="button" data-p="${k}" aria-pressed="${k === state.profile}"${tip(`${p.label} profile`, `Limits the scores use: wind at launch ${p.wind} m/s, gusts ${p.gust} m/s, gust spread ${p.spread} m/s, wind 1,000 m above the launch ${p.upper} m/s. Pick the one that fits your wing and experience.`)}>${p.label}</button>`).join('');
+    `<button type="button" data-p="${k}" aria-pressed="${k === state.profile}"${tip(`${p.label} profile`, `Limits the scores use: wind at launch ${p.wind} m/s (soaring needs at least ${p.soarMin} m/s), gusts ${p.gust} m/s, gust spread ${p.spread} m/s, wind 1,000 m above the launch ${p.upper} m/s. Pick the one that fits your wing and experience.`)}>${p.label}</button>`).join('');
+}
+
+function renderMode() {
+  $('#mode').innerHTML = Object.entries(MODES).map(([k, m]) =>
+    `<button type="button" data-mode="${k}" aria-pressed="${k === state.mode}"${tip(`${m.label} scores`, m.help + ' The board, best spots and hourly scores switch to this kind of flying.')}>${m.label}</button>`).join('');
 }
 
 function renderStatus() {
@@ -888,18 +922,18 @@ function renderSpots() {
   const spots = bestSpots();
   const el = $('#spots');
   if (!Object.keys(state.data).length) { el.innerHTML = ''; return; }
-  el.innerHTML = `<h3><span${tip('Best spots', 'The highest-scoring launch-days in the forecast, 40 or more. On a tied score, calmer gusts rank first. Click one to open its details.')}>Best spots</span></h3>` + (spots.length ? `<div class="spot-list">${spots.map(({s, d, c}) => {
+  el.innerHTML = `<h3><span${tip(`Best spots for ${MODES[state.mode].label.toLowerCase()}`, `The highest-scoring launch-days for ${MODES[state.mode].label.toLowerCase()} in the forecast, 40 or more. On a tied score, calmer gusts rank first. Click one to open its details.`)}>Best spots · ${MODES[state.mode].label}</span></h3>` + (spots.length ? `<div class="spot-list">${spots.map(({s, d, c}) => {
     const b = band(c.score);
     const dt = new Date(d + 'T12:00:00');
     return `<button type="button" class="spot" data-site="${esc(s.key)}" data-date="${d}"${tip(`${s.name} · ${dt.toLocaleDateString([], {weekday: 'long', day: 'numeric', month: 'long'})}`, cellTip(c))}>
       <span class="chip b${b[1]}">${c.score}</span>
       <span class="spot-txt"><b>${esc(s.name)}</b><small>${dt.toLocaleDateString([], {weekday: 'short', day: 'numeric', month: 'short'})}${c.window ? ' · ' + c.window + 'h' : ''} · ${gustTag(c.gust, true)}</small></span></button>`;
-  }).join('')}</div>` : `<p class="note">No site scores 40 or more in the next ${dates().length} days for the ${PROFILES[state.profile].label.toLowerCase()} profile.</p>`);
+  }).join('')}</div>` : `<p class="note">No site scores 40 or more for ${MODES[state.mode].label.toLowerCase()} in the next ${dates().length} days for the ${PROFILES[state.profile].label.toLowerCase()} profile.</p>`);
 }
 
 function renderLegend() {
   $('#legend').innerHTML = BANDS.map(b => `<span${tip(b[2], BAND_HELP[b[1]])}><b class="b${b[1]}"></b>${b[2]}${b[0] >= 0 ? ` (${b[0] + 1}+)` : ''}</span>`).join('')
-    + `<span${tip('How the score works', `Every hour gets 0 to 100: the product of the factors shown under the sounding (wind, direction, lee side, gusts, wind aloft, rain, cloud base, thermals, storm risk). A day's score is the best 3-hour stretch between ${pad(WINDOW[0])}:00 and ${pad(WINDOW[1] + 1)}:00 for each model, averaged across the models.`)}>Score = best 3 hours between ${pad(WINDOW[0])}:00 and ${pad(WINDOW[1] + 1)}:00, averaged across models</span><span${tip('Model agreement', 'Three dots: the models\' day scores are within 15 points. Two dots: within 30. One dot: the models disagree, so the score is less certain.')}><span class="agree"><i class="on"></i><i class="on"></i><i class="on"></i></span> models agree</span>`;
+    + `<span${tip('How the score works', `Every hour gets 0 to 100: the product of the factors shown under the sounding (wind, direction, lee side, gusts, wind aloft, rain, cloud base, thermals, storm risk). A day's score is the best 3-hour stretch between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00 for each model, averaged across the models.`)}>${MODES[state.mode].label} score = best 3 hours between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00, averaged across models</span><span${tip('Model agreement', 'Three dots: the models\' day scores are within 15 points. Two dots: within 30. One dot: the models disagree, so the score is less certain.')}><span class="agree"><i class="on"></i><i class="on"></i><i class="on"></i></span> models agree</span>`;
 }
 
 function autoSelect() {
@@ -965,7 +999,7 @@ function renderDetail() {
 
   const modelCards = c ? c.per.map(({m, d}) => {
     const mb = band(d.score);
-    return `<div class="model"><div class="top"><span class="label"${tip(m.label, modelInfo(m))}>${esc(m.label)}</span><span class="sc chip b${mb[1]}"${tip(`${m.label} day score`, `This model's best 3-hour stretch between ${pad(WINDOW[0])}:00 and ${pad(WINDOW[1] + 1)}:00 scores ${d.score}. Flyable hours are hours scoring 60 or more. The limit line names the weakest factor in that stretch.`)}>${d.score}</span></div>
+    return `<div class="model"><div class="top"><span class="label"${tip(m.label, modelInfo(m))}>${esc(m.label)}</span><span class="sc chip b${mb[1]}"${tip(`${m.label} day score`, `This model's best 3-hour stretch between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00 scores ${d.score}. Flyable hours are hours scoring 60 or more. The limit line names the weakest factor in that stretch.`)}>${d.score}</span></div>
       <div class="why">${d.good.length ? `Flyable ${hourRanges(d.good)}` : 'No flyable hour'}${d.gust != null ? ` · ${gustTag(d.gust, true)}` : ''}</div>
       <div class="why">Limit: ${esc(d.limiting.label.toLowerCase())}, ${esc(d.limiting.detail)}</div></div>`;
   }).join('') : '<p class="muted">No forecast for this day.</p>';
@@ -974,7 +1008,7 @@ function renderDetail() {
   for (let hr = 7; hr <= 20; hr++) hoursAll.push(`${date}T${pad(hr)}`);
   const hourRows = hoursAll.filter(k => models.some(m => m.hours[k])).map(k => {
     const hr = +k.slice(11);
-    const inWin = hr >= WINDOW[0] && hr <= WINDOW[1];
+    const inWin = hr >= win()[0] && hr <= win()[1];
     const cells = models.map(m => {
       const x = m.hours[k];
       if (!x) return '<td class="muted">–</td>';
@@ -1004,12 +1038,13 @@ function renderDetail() {
     </div>
     ${site.closed ? '<p class="err">Paragliding Mapa lists this launch as closed or forbidden. Check before you go.</p>' : ''}
     ${siteNotes(site)}
+    ${flyingScores(site, date)}
     <div class="models">${modelCards}</div>
     ${models.some(m => m.test) ? '<p class="note">Windy columns marked (trial) come from a trial API key. Windy shuffles that data on purpose, so it is shown here but left out of the score. A paid Point Forecast key removes the label.</p>' : ''}
     <div class="bench">
       <div style="display:grid;gap:8px;min-width:0">
         <h3>Hour by hour</h3>
-        <div class="hours-scroll"><table class="hours"><thead><tr><th${tip('Local time', `Local time at the launch. Faded rows fall outside the ${pad(WINDOW[0])}:00 to ${pad(WINDOW[1] + 1)}:00 window used for the day score.`)}>Local</th>${models.map(m => `<th${tip(m.label, modelInfo(m))}>${esc(m.label)}</th>`).join('')}</tr></thead><tbody>${hourRows}</tbody></table></div>
+        <div class="hours-scroll"><table class="hours"><thead><tr><th${tip('Local time', `Local time at the launch. Faded rows fall outside the ${pad(win()[0])}:00 to ${pad(win()[1] + 1)}:00 window used for the day score.`)}>Local</th>${models.map(m => `<th${tip(m.label, modelInfo(m))}>${esc(m.label)}</th>`).join('')}</tr></thead><tbody>${hourRows}</tbody></table></div>
         <p class="note">Each cell shows the hour score, wind at the launch (arrow points downwind, mean/gust in m/s), rain and total cloud %. Click a row to update the sounding.</p>
       </div>
       <div class="snd-wrap">
@@ -1019,6 +1054,18 @@ function renderDetail() {
         <div class="factors">${factors}</div>
       </div>
     </div>`;
+}
+
+/** Both day scores for the location as bars with the flyable threshold (60); the selected kind of flying is highlighted. */
+function flyingScores(site, date) {
+  const rows = Object.keys(MODES).map(mode => {
+    const c = consensus(site, date, mode);
+    if (!c) return '';
+    const m = measure(`${MODES[mode].label} score`, c.score, '/100', 60, 'min', 100);
+    m.active = mode === state.mode;
+    return measureBar(m, true, (c.window ? `Flyable ${c.window}h` : 'No flyable hours') + ` · weakest: ${c.per.reduce((a, x) => (x.d.score < a.d.score ? x : a)).d.limiting.label.toLowerCase()}` + (m.active ? ' · shown on the board' : ''));
+  }).join('');
+  return rows ? `<div class="factors flying"><h3>Thermal and soaring</h3>${rows}</div>` : '';
 }
 
 const NOTE_LABELS = {limitations: 'Limitations', air_traffic: 'Airspace', rules: 'Rules'};
@@ -1198,6 +1245,14 @@ function renderNearby(all = state.allSites) {
 }
 
 // ---------- events ----------
+$('#mode').addEventListener('click', e => {
+  const b = e.target.closest('[data-mode]');
+  if (!b || b.dataset.mode === state.mode) return;
+  state.mode = b.dataset.mode;
+  store.set('mode', state.mode);
+  renderMode(); renderLegend(); renderBoard();
+  if (state.sel.site) select(state.sel.site, state.sel.date, null, state.sel.model);
+});
 $('#profile').addEventListener('click', e => {
   const p = e.target.closest('[data-p]');
   if (!p) return;
@@ -1299,6 +1354,7 @@ if (SNAP) {
   $('#refresh').hidden = true;
   $('#add-note').textContent = `This published snapshot covers ${SNAP.sites.length} sites. To change them, edit favorites.json and run snapshot.py.`;
 }
+renderMode();
 renderProfile();
 renderLegend();
 renderBoard();
