@@ -200,7 +200,7 @@ dialog { border: 1px solid var(--line); border-radius: var(--r); background: var
 dialog::backdrop { background: rgb(0 0 0 / .35); }
 dialog form { display: grid; gap: 14px; }
 .field { display: grid; gap: 4px; }
-.field input[type=text], .field input[type=password] { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--paper); width: 100%; }
+.field input[type=text], .field input[type=password], .field input[type=number], .field select { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--paper); color: inherit; width: 100%; }
 .checks { display: flex; flex-wrap: wrap; gap: 6px 16px; }
 .checks label { display: inline-flex; gap: 6px; align-items: center; }
 .err { color: var(--dot0); font-size: .8rem; }
@@ -219,7 +219,7 @@ footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-wi
     <div class="controls">
       <div class="seg" role="group" aria-label="Type of flying" id="mode"></div>
       <div class="seg" role="group" aria-label="Pilot profile" id="profile"></div>
-      <button class="btn" id="open-settings" type="button" data-tip-title="Sources & keys" data-tip="Choose which forecast models count toward the scores, and add Windy or Meteoblue API keys.">Sources &amp; keys</button>
+      <button class="btn" id="open-settings" type="button" data-tip-title="Wing, sources & keys" data-tip="Set your wing class and all-up flight weight, choose forecast models, and add Windy or Meteoblue API keys.">Wing, sources &amp; keys</button>
       <button class="btn" id="refresh" type="button" data-tip-title="Refresh" data-tip="Download fresh forecasts for every site. The models publish new runs every 1 to 6 hours.">Refresh</button>
     </div>
   </header>
@@ -262,7 +262,27 @@ footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-wi
 
 <dialog id="settings">
   <form method="dialog" id="settings-form">
-    <h2>Sources &amp; keys</h2>
+    <h2>Wing, sources &amp; keys</h2>
+    <div class="field">
+      <label class="label" for="wing-class">Wing class</label>
+      <select id="wing-class"></select>
+      <span class="note">Class presets are rough trim-speed estimates, not certification performance or a recommendation to fly a higher class. Pilot wind and gust limits still apply.</span>
+    </div>
+    <div class="field">
+      <label class="label" for="flight-weight">All-up flight weight (kg)</label>
+      <input id="flight-weight" type="number" min="20" max="250" step="0.1" required aria-describedby="flight-weight-help">
+      <span class="note" id="flight-weight-help">Include pilot, wing, harness, reserve, clothing, ballast and all equipment. Stay within your wing's certified weight range.</span>
+    </div>
+    <div class="field">
+      <label class="label" for="reference-weight">Wing reference all-up weight (kg)</label>
+      <input id="reference-weight" type="number" min="20" max="250" step="0.1" required aria-describedby="trim-help">
+    </div>
+    <div class="field">
+      <label class="label" for="trim-speed">Trim airspeed at reference weight (km/h, optional)</label>
+      <input id="trim-speed" type="number" min="20" max="65" step="0.1" aria-describedby="trim-help">
+      <span class="note" id="trim-help">Use your wing's published unaccelerated trim speed and the all-up weight it was measured at. Blank speed uses the class estimate; the default reference weight is 100 kg. Speed scales with the square root of flight weight / reference weight for the same wing size. This is only an estimate, not a measured groundspeed; speed-bar gains are not assumed.</span>
+      <output class="note" id="wing-estimate" aria-live="polite"></output>
+    </div>
     <div class="field">
       <span class="label">Open-Meteo models (free, no key)</span>
       <div class="checks" id="model-checks"></div>
@@ -279,12 +299,12 @@ footer { font-size: .78rem; color: var(--muted); display: grid; gap: 6px; max-wi
     </div>
     <div class="field">
       <span class="label">Your data</span>
-      <span class="note">Your sites, pilot profile, model choices and API keys are stored only in this browser (local storage). The server that hosts this page stores nothing about you. Forecast and site lookups go straight from your browser to Open-Meteo, Paragliding Mapa, Windy and Meteoblue.</span>
+      <span class="note">Your sites, pilot profile, wing settings, model choices and API keys are stored only in this browser (local storage). The server that hosts this page stores nothing about you. Forecast and site lookups go straight from your browser to Open-Meteo, Paragliding Mapa, Windy and Meteoblue.</span>
       <div><button class="btn" type="button" id="clear-data" data-tip-title="Clear my data" data-tip="Erase your sites, settings and API keys from this browser and start over with the default sites.">Clear my data in this browser</button></div>
     </div>
     <div style="display:flex;gap:8px;justify-content:end">
-      <button class="btn" value="cancel" type="submit">Cancel</button>
-      <button class="btn primary" value="save" id="save-settings" type="submit">Save and reload forecasts</button>
+      <button class="btn" value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button class="btn primary" value="save" id="save-settings" type="submit">Save settings</button>
     </div>
   </form>
 </dialog>
@@ -325,6 +345,27 @@ const PROFILES = {
   pilot: {label: 'Intermediate', wind: 6, gust: 8.5, spread: 4.5, upper: 10, soarMin: 3},
   expert: {label: 'Expert', wind: 8, gust: 11, spread: 6, upper: 13, soarMin: 3},
 };
+// Approximate unaccelerated speeds (km/h); certification class alone does not determine trim speed.
+const WING_CLASSES = {
+  A: {label: 'EN A', trim: 36},
+  B: {label: 'EN B', trim: 38},
+  C: {label: 'EN C', trim: 39},
+  D: {label: 'EN D', trim: 40},
+  CCC: {label: 'CCC', trim: 40},
+};
+function wingSettings(value) {
+  const w = value && typeof value === 'object' ? value : {};
+  const valid = (n, min, max) => typeof n === 'number' && Number.isFinite(n) && n >= min && n <= max;
+  return {
+    wingClass: Object.keys(WING_CLASSES).includes(w.wingClass) ? w.wingClass : 'B',
+    flightWeight: valid(w.flightWeight, 20, 250) ? w.flightWeight : 100,
+    referenceWeight: valid(w.referenceWeight, 20, 250) ? w.referenceWeight : 100,
+    trimSpeed: valid(w.trimSpeed, 20, 65) ? w.trimSpeed : null,
+  };
+}
+function trimSpeed(w) {
+  return (w.trimSpeed ?? WING_CLASSES[w.wingClass].trim) / 3.6 * Math.sqrt(w.flightWeight / w.referenceWeight);
+}
 const BANDS = [[75, 4, 'Good'], [60, 3, 'Flyable'], [40, 2, 'Marginal'], [20, 1, 'Poor'], [-1, 0, 'No-go']];
 
 const SNAP = JSON.parse(document.getElementById('snapshot').textContent || 'null');
@@ -337,6 +378,7 @@ const store = {
 
 const state = {
   profile: store.get('profile', 'pilot'),
+  wing: wingSettings(store.get('wing', null)),
   mode: MODES[store.get('mode', 'thermal')] ? store.get('mode', 'thermal') : 'thermal',
   sites: SNAP ? SNAP.sites : store.get('sites', DEFAULT_SITES),
   omOn: store.get('omOn', OM_MODELS.map(m => m.id)),
@@ -591,6 +633,18 @@ function scoreHour(site, h, elev, P, mode = state.mode) {
   // meas: the measured values behind a factor, each drawn as a bar in its own unit with the threshold marked.
   const add = (key, label, v, detail, meas = []) => f.push({key, label, v: clamp(v, 0, 1), detail, meas: meas.filter(m => m.value != null)});
   const ws = h.ws;
+  const trim = trimSpeed(state.wing);
+  const launchAlt = site.alt ?? elev;
+  const aloft = [0, 300, 600, 1000].map(dz => windAt(h, elev, launchAlt + dz)?.ws);
+  const winds = [ws, h.g, ...h.lv.filter(l => l.z > launchAlt && l.z <= launchAlt + 1000).map(l => l.ws),
+    ...aloft].filter(Number.isFinite);
+  const opposingWind = Math.max(...winds);
+  const margin = trim - opposingWind;
+  add('penetration', 'Forward penetration', margin / (trim * 0.3),
+    `${WING_CLASSES[state.wing.wingClass].label}, ${state.wing.flightWeight} kg all-up: estimated trim ${(trim * 3.6).toFixed(1)} km/h (${trim.toFixed(1)} m/s); strongest available forecast wind/gust up to 1,000 m above launch ${opposingWind.toFixed(1)} m/s`
+    + (margin <= 0 ? '; no forward penetration into that wind at trim' : `; estimated headwind margin ${margin.toFixed(1)} m/s`)
+    + (aloft.every(Number.isFinite) ? '' : '; incomplete pressure-level wind coverage, aloft penetration unknown'),
+    [measure('Penetration wind', opposingWind, 'm/s', +trim.toFixed(2))]);
 
   const soaring = mode === 'soaring';
   if (soaring) {
@@ -767,6 +821,7 @@ const modelInfo = m => (MODEL_HELP[m.id] || m.label) + (m.test ? ' This comes fr
 
 const MEAS_HELP = {
   'Wind speed': 'Mean wind 10 m above the ground at the launch. Thermal flying: points start dropping at 70% of your profile limit. Soaring: the wind has to reach the soaring minimum to hold you up along the ridge, and stay under your limit.',
+  'Penetration wind': 'Strongest forecast wind or surface gust from the ground to 1,000 m above launch, treated conservatively as a headwind. Points drop above 70% of estimated trim airspeed and reach zero at trim: no forward progress into that wind. Wing loading uses your all-up weight relative to the reference weight for the same wing size. This estimate does not relax pilot limits or assume speed-bar use.',
   'Thermal score': 'How good the day is for thermal flying (0 to 100): light wind, a high thermal top, sun and the safety limits. The best 3 hours between 10:00 and 18:00, averaged across models. 60 or more is flyable.',
   'Soaring score': 'How good the day is for ridge soaring (0 to 100): a steady wind straight up the slope between the soaring minimum and your limit, smooth air, and the safety limits. The best 3 hours between 09:00 and 19:00, averaged across models. 60 or more is flyable.',
   'Off the sector': 'How many degrees the wind is outside the launch\'s usable sectors. 0° means it blows up the slope. Up to 22.5° counts as cross wind. Beyond that the wind comes from the side or behind.',
@@ -933,7 +988,7 @@ function renderSpots() {
 
 function renderLegend() {
   $('#legend').innerHTML = BANDS.map(b => `<span${tip(b[2], BAND_HELP[b[1]])}><b class="b${b[1]}"></b>${b[2]}${b[0] >= 0 ? ` (${b[0] + 1}+)` : ''}</span>`).join('')
-    + `<span${tip('How the score works', `Every hour gets 0 to 100: the product of the factors shown under the sounding (wind, direction, lee side, gusts, wind aloft, rain, cloud base, thermals, storm risk). A day's score is the best 3-hour stretch between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00 for each model, averaged across the models.`)}>${MODES[state.mode].label} score = best 3 hours between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00, averaged across models</span><span${tip('Model agreement', 'Three dots: the models\' day scores are within 15 points. Two dots: within 30. One dot: the models disagree, so the score is less certain.')}><span class="agree"><i class="on"></i><i class="on"></i><i class="on"></i></span> models agree</span>`;
+    + `<span${tip('How the score works', `Every hour gets 0 to 100: the product of the factors shown under the sounding (forward penetration, wind, direction, lee side, gusts, wind aloft, rain, cloud base, thermals, storm risk). A day's score is the best 3-hour stretch between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00 for each model, averaged across the models.`)}>${MODES[state.mode].label} score = best 3 hours between ${pad(win()[0])}:00 and ${pad(win()[1] + 1)}:00, averaged across models</span><span${tip('Model agreement', 'Three dots: the models\' day scores are within 15 points. Two dots: within 30. One dot: the models disagree, so the score is less certain.')}><span class="agree"><i class="on"></i><i class="on"></i><i class="on"></i></span> models agree</span>`;
 }
 
 function autoSelect() {
@@ -1326,13 +1381,35 @@ $('#clear-data').addEventListener('click', e => {
   location.reload();
 });
 $('#open-settings').addEventListener('click', () => {
+  $('#wing-class').innerHTML = Object.entries(WING_CLASSES).map(([k, w]) => `<option value="${k}">${w.label} · estimate ${w.trim} km/h</option>`).join('');
+  $('#wing-class').value = state.wing.wingClass;
+  $('#flight-weight').value = state.wing.flightWeight;
+  $('#reference-weight').value = state.wing.referenceWeight;
+  $('#trim-speed').value = state.wing.trimSpeed ?? '';
+  updateWingEstimate();
   $('#model-checks').innerHTML = OM_MODELS.map(m => `<label><input type="checkbox" id="om-${m.id}" value="${m.id}" ${state.omOn.includes(m.id) ? 'checked' : ''}> ${m.label}</label>`).join('');
   $('#windy-key').value = state.keys.windy || ''; $('#mb-key').value = state.keys.mb || '';
   $('#windy-key').disabled = $('#mb-key').disabled = !!SNAP;
+  $('#settings').returnValue = '';
   $('#settings').showModal();
 });
+function readWingSettings() {
+  return wingSettings({wingClass: $('#wing-class').value, flightWeight: $('#flight-weight').valueAsNumber,
+    referenceWeight: $('#reference-weight').valueAsNumber, trimSpeed: $('#trim-speed').valueAsNumber});
+}
+function updateWingEstimate() {
+  if (!['#flight-weight', '#reference-weight', '#trim-speed'].every(s => $(s).validity.valid)) {
+    $('#wing-estimate').textContent = 'Enter valid weights and trim speed to see the estimate.';
+    return;
+  }
+  const speed = trimSpeed(readWingSettings());
+  $('#wing-estimate').textContent = `Estimated loaded trim: ${(speed * 3.6).toFixed(1)} km/h (${speed.toFixed(1)} m/s).`;
+}
+$('#settings-form').addEventListener('input', updateWingEstimate);
 $('#settings').addEventListener('close', () => {
   if ($('#settings').returnValue !== 'save') return;
+  state.wing = readWingSettings();
+  store.set('wing', state.wing);
   state.omOn = [...document.querySelectorAll('#model-checks input:checked')].map(i => i.value);
   store.set('omOn', state.omOn);
   if (!SNAP) {
