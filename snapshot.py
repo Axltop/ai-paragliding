@@ -44,6 +44,59 @@ def site_from_api(s):
     }
 
 
+def normalize_site(x):
+    """Mirrors normalizeSite in index.html: brings a favorites.json entry from any app version to the current shape."""
+    if not isinstance(x, dict):
+        return None
+    try:
+        lat, lon = float(x['lat']), float(x['lon'])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if abs(lat) > 90 or abs(lon) > 180:
+        return None
+
+    def num(v):
+        try:
+            return None if v in (None, '') else float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def ranges(r):
+        out = []
+        for q in r if isinstance(r, list) else []:
+            if isinstance(q, (list, tuple)) and len(q) == 2 and all(num(v) is not None for v in q):
+                out.append([num(q[0]), num(q[1])])
+        return out
+
+    wind = ranges(x.get('wind')) or ranges(x.get('wind_usable'))
+    if not wind and x.get('wind_usable_from') is not None and x.get('wind_usable_to') is not None:
+        wind = ranges([[x['wind_usable_from'], x['wind_usable_to']]])
+    opt = ranges(x.get('opt'))
+    notes = x.get('notes') if isinstance(x.get('notes'), dict) else {}
+    alt = num(x.get('alt', x.get('altitude')))
+    sup = num(x.get('sup', x.get('superelevation')))
+    return {**x,
+            'key': x['key'] if isinstance(x.get('key'), str) and x['key'] else f'{lat} {lon}',
+            'name': str(x.get('name') or '').strip() or 'Unnamed launch',
+            'lat': lat, 'lon': lon,
+            'alt': int(alt) if alt is not None and alt == int(alt) else alt,
+            'sup': int(sup) if sup is not None and sup == int(sup) else sup,
+            'wind': wind or None, 'opt': opt or None,
+            'notes': {k: notes.get(k) if isinstance(notes.get(k), str) else '' for k in NOTE_KEYS},
+            'webcam': x.get('webcam') if isinstance(x.get('webcam'), str) else '',
+            'url': x.get('url') if isinstance(x.get('url'), str) and x.get('url') else None,
+            'closed': bool(x.get('closed')), 'custom': bool(x.get('custom'))}
+
+
+def normalize_sites(items):
+    seen, out = set(), []
+    for site in (normalize_site(x) for x in (items if isinstance(items, list) else [])):
+        if site and site['key'] not in seen:
+            seen.add(site['key'])
+            out.append(site)
+    return out
+
+
 def meters(a, b):
     return math.hypot((a['lat'] - b['lat']) * 111e3, (a['lon'] - b['lon']) * 111e3 * math.cos(math.radians(a['lat'])))
 
@@ -58,6 +111,8 @@ def dedupe(items):
 
 def refresh_site(site, all_sites):
     """Mirrors refreshSite in index.html: launches within 100 m, or same name within 1.5 km, merge into one site."""
+    if site.get('custom'):  # spots the pilot added themselves keep their own data
+        return site
     matches = sorted((x for x in all_sites if meters(site, x) < 100 or (x['name'] == site['name'] and meters(site, x) < 1500)),
                      key=lambda x: meters(site, x))
     if not matches:
@@ -138,7 +193,7 @@ def fetch(site):
 
 def main():
     fav_path = ROOT / 'favorites.json'
-    sites = refresh_sites(json.loads(fav_path.read_text()))
+    sites = refresh_sites(normalize_sites(json.loads(fav_path.read_text())))
     fav_path.write_text('[\n' + ',\n'.join('  ' + json.dumps(s, ensure_ascii=False) for s in sites) + '\n]\n')
     key = windy_key()
     om, windy = {}, {}

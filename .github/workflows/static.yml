@@ -33,11 +33,17 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      # The app is a static page that runs entirely in the browser; publish only what it loads.
+      # snapshot.py, the Docker files and favorites.json are local tooling and stay out of the site.
+      - name: Collect site files
+        run: |
+          mkdir _site
+          cp index.html _site/
+          cp -r fonts _site/
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Upload entire repository
-          path: '.'
+          path: '_site'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
